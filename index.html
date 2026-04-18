@@ -121,33 +121,7 @@ textarea{resize:vertical;min-height:60px}
 <div id="root">
   <div class="loading-screen">
     <div class="spinner"></div>
-    <div style="font-size:14px;color:#7a8499;font-weight:600">Loading AgriTrack...</div>
-    <div style="font-size:11px;color:#aab;margin-top:-8px">Connecting to persistent storage</div>
-  </div>
-</div>
-<div id="sync-badge" class="sync-badge">● Live</div>
-
-<script>
-/* =====================================================================
-   PARTNERTRACK BD — PERSISTENT LIVE DASHBOARD
-   Uses window.storage (shared=true) for all data so every user
-   sees live updates without a page refresh.
-
-   Storage keys (shared):
-     pt:users  pt:accounts  pt:amUpdates  pt:stages
-     pt:ddOptions  pt:pendingSignups  pt:resetTokens  pt:auditLog
-   Session key (private):
-     pt:session  — stores logged-in user id
-
-   How it stays live:
-     • Every save writes to shared storage immediately
-     • A poll every 8s compares stored data to in-memory DB
-     • If anything changed (another user submitted a form) it re-renders
-
-<div id="root">
-  <div class="loading-screen">
-    <div class="spinner"></div>
-    <div style="font-size:14px;color:#7a8499;font-weight:600">Loading AgriTrack...</div>
+    <div style="font-size:14px;color:#7a8499;font-weight:600">Loading PartnerTrack BD...</div>
     <div style="font-size:11px;color:#aab;margin-top:-8px">Connecting to Supabase...</div>
   </div>
 </div>
@@ -157,12 +131,10 @@ textarea{resize:vertical;min-height:60px}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* =====================================================================
-   AGRITRACK — SUPABASE LIVE DASHBOARD
+   PARTNERTRACK BD — SUPABASE LIVE DASHBOARD
    ─────────────────────────────────────────
-   PASTE YOUR TWO VALUES BELOW:
-
-   SUPABASE_URL  → Settings → API Keys → Legacy tab → Project URL
-   SUPABASE_ANON → Settings → API Keys → Legacy tab → anon public key (starts with eyJ)
+   STEP 1: Replace the two lines below with your Supabase credentials
+           (Settings → API in your Supabase project dashboard)
    ===================================================================== */
 const SUPABASE_URL  = 'https://mfvgfprqiayjnasxqgcf.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1mdmdmcHJxaWF5am5hc3hxZ2NmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY0ODIwMDMsImV4cCI6MjA5MjA1ODAwM30.MGfBr6lBfjVvJ9fc7xT62BLQzdryVBPALsqM3MwFEvA';
@@ -851,8 +823,6 @@ function closeM(){MODAL=null;R();}
 function selCS(el,val){document.querySelectorAll('.csp').forEach(b=>b.classList.remove('sel'));el.classList.add('sel');const h=document.getElementById('f-cs');if(h)h.value=val;}
 function calcOD(val){const el=document.getElementById('od-disp');if(!el)return;const od=odD(val);el.textContent=val?(od>0?`+${od} days overdue`:'On track — not overdue'):'Enter next connect date';}
 
-/* ---- ALL SAVE FUNCTIONS — write to persistent storage ---- */
-async function saveAMUpdate(accId,existingAmId){
 
 /* =====================================================================
    SAVE FUNCTIONS — all write to Supabase
