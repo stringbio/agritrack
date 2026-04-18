@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -158,13 +157,15 @@ textarea{resize:vertical;min-height:60px}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* =====================================================================
-   PARTNERTRACK BD — SUPABASE LIVE DASHBOARD
+   AGRITRACK — SUPABASE LIVE DASHBOARD
    ─────────────────────────────────────────
-   STEP 1: Replace the two lines below with your Supabase credentials
-           (Settings → API in your Supabase project dashboard)
+   PASTE YOUR TWO VALUES BELOW:
+
+   SUPABASE_URL  → Settings → API Keys → Legacy tab → Project URL
+   SUPABASE_ANON → Settings → API Keys → Legacy tab → anon public key (starts with eyJ)
    ===================================================================== */
-const SUPABASE_URL  = 'https://mfvgfprqiayjnasxqgcf.supabase.co';   // e.g. https://abcxyz.supabase.co
-const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1mdmdmcHJxaWF5am5hc3hxZ2NmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY0ODIwMDMsImV4cCI6MjA5MjA1ODAwM30.MGfBr6lBfjVvJ9fc7xT62BLQzdryVBPALsqM3MwFEvA'; // long string starting with eyJ...
+const SUPABASE_URL  = 'https://mfvgfprqiayjnasxqgcf.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1mdmdmcHJxaWF5am5hc3hxZ2NmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY0ODIwMDMsImV4cCI6MjA5MjA1ODAwM30.MGfBr6lBfjVvJ9fc7xT62BLQzdryVBPALsqM3MwFEvA';
 
 /* =====================================================================
    DO NOT EDIT BELOW THIS LINE
