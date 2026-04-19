@@ -1,0 +1,25 @@
+{
+  "name": "AgriTrack — Live Dashboard",
+  "short_name": "AgriTrack",
+  "description": "Live Partner & Account Tracking Dashboard",
+  "start_url": "/agritrack/",
+  "scope": "/agritrack/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#eef2f7",
+  "theme_color": "#4a7ec7",
+  "icons": [
+    {
+      "src": "https://via.placeholder.com/192x192/4a7ec7/ffffff?text=AT",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://via.placeholder.com/512x512/4a7ec7/ffffff?text=AT",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
