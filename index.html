@@ -4,12 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>AgriTrack — Live Dashboard</title>
-<link rel="manifest" href="manifest.json">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="AgriTrack">
-<meta name="theme-color" content="#4a7ec7">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -658,26 +652,52 @@ async function adminRP(id){const np=document.getElementById('mnp')?.value||'',cp
 async function saveProf(){const n=(document.getElementById('men')?.value||'').trim(),e=(document.getElementById('mee')?.value||'').trim();if(!n||!e)return sal('Fields required','ae');if(DB.users.find(u=>u.email===e&&u.id!==CU.id))return sal('Email in use','ae');await SB.from('pt_users').update({name:n,email:e}).eq('id',CU.id);CU.name=n;CU.email=e;sal('Profile updated!','as');}
 async function changePw(){const cur=document.getElementById('mec')?.value||'',np=document.getElementById('men2')?.value||'',cp=document.getElementById('mecf')?.value||'';if(cur!==CU.password)return sal('Current password incorrect','ae');if(np.length<8)return sal('Min 8 chars','ae');if(np!==cp)return sal('Passwords do not match','ae');await SB.from('pt_users').update({password:np}).eq('id',CU.id);CU.password=np;sal('Password updated!','as');}
 async function savePart(id){const n=(document.getElementById('mn')?.value||'').trim(),e=(document.getElementById('me')?.value||'').trim(),p=id?null:document.getElementById('mp')?.value||'';if(!n||!e||(!id&&!p))return sal('Fields required','ae');if(!id&&p.length<8)return sal('Min 8 chars','ae');if(id){await SB.from('pt_users').update({name:n,email:e}).eq('id',id);}else{if(DB.users.find(u=>u.email===e))return sal('Email in use','ae');await SB.from('pt_users').insert([{id:uid(),name:n,email:e,password:p,role:'partner',status:'active'}]);}closeM();sal('Partner saved!','as');}
-async function delPart(id){if(id===CU.id)return sal("Can't remove yourself",'ae');await SB.from('pt_users').delete().eq('id',id);sal('Partner removed','as');}
+async function delPart(id){
+  if(id===CU.id)return sal("Can't remove yourself",'ae');
+  const assigned=DB.accounts.filter(a=>a.assignedPartnerId===id).length;
+  if(assigned>0)return sal(`Cannot remove — this partner has ${assigned} account(s) assigned. Reassign them first.`,'ae',6000);
+  // Also delete any am_updates by this partner first (foreign key)
+  await SB.from('pt_am_updates').delete().eq('partner_id',id);
+  const{error}=await SB.from('pt_users').delete().eq('id',id);
+  if(error){
+    console.error('delPart error:',error);
+    return sal('Delete failed: '+error.message,'ae',7000);
+  }
+  // Force reload users from Supabase
+  const{data}=await SB.from('pt_users').select('*');
+  if(data)DB.users=data;
+  sal('Partner removed','as');
+}
 async function saveAdm(id){const n=(document.getElementById('mn')?.value||'').trim(),e=(document.getElementById('me')?.value||'').trim(),p=id?null:document.getElementById('mp')?.value||'';if(!n||!e||(!id&&!p))return sal('Fields required','ae');if(!id&&p.length<8)return sal('Min 8 chars','ae');if(id){await SB.from('pt_users').update({name:n,email:e}).eq('id',id);}else{if(DB.users.find(u=>u.email===e))return sal('Email in use','ae');await SB.from('pt_users').insert([{id:uid(),name:n,email:e,password:p,role:'admin',status:'active'}]);}closeM();sal('Admin saved!','as');}
-async function delAdm(id){if(id===CU.id)return sal("Can't remove yourself",'ae');await SB.from('pt_users').delete().eq('id',id);sal('Admin removed','as');}
+async function delAdm(id){
+  if(id===CU.id)return sal("Can't remove yourself",'ae');
+  const{error}=await SB.from('pt_users').delete().eq('id',id);
+  if(error){
+    console.error('delAdm error:',error);
+    return sal('Delete failed: '+error.message,'ae',7000);
+  }
+  // Force reload users from Supabase
+  const{data}=await SB.from('pt_users').select('*');
+  if(data)DB.users=data;
+  sal('Admin removed','as');
+}
 async function saveStg(id){const n=(document.getElementById('mn')?.value||'').trim();if(!n)return sal('Stage name required','ae');if(id){await SB.from('pt_stages').update({name:n}).eq('id',id);}else{await SB.from('pt_stages').insert([{id:uid(),name:n,sort_order:DB.stages.length+1}]);}closeM();sal('Stage saved!','as');}
-async function delStg(id){await SB.from('pt_stages').delete().eq('id',id);sal('Stage deleted','as');}
+async function delStg(id){
+  const inUse=DB.accounts.filter(a=>a.stageId===id).length;
+  if(inUse>0)return sal(`Cannot delete — ${inUse} account(s) are using this stage. Change their stage first.`,'ae',6000);
+  const{error}=await SB.from('pt_stages').delete().eq('id',id);
+  if(error)return sal('Error: '+error.message,'ae');
+  // Force reload stages from Supabase
+  const{data}=await SB.from('pt_stages').select('*').order('sort_order',{ascending:true});
+  if(data)DB.stages=data.map(r=>({id:r.id,name:r.name}));
+  sal('Stage deleted','as');
+}
 async function addDD(key){const inp=document.getElementById('dd-'+key);if(!inp?.value.trim())return;if(!DB.dd[key])DB.dd[key]=[];if(!DB.dd[key].includes(inp.value.trim()))DB.dd[key].push(inp.value.trim());await SB.from('pt_settings').upsert([{key:'ddOptions',value:DB.dd}]);inp.value='';sal('Option added!','as');}
 async function rmDD(key,i){DB.dd[key].splice(i,1);await SB.from('pt_settings').upsert([{key:'ddOptions',value:DB.dd}]);sal('Option removed','as');}
 
 bootDB().catch(err=>{
   document.getElementById('root').innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;background:#eef2f7;padding:20px"><div style="font-size:18px;font-weight:700;color:#e74c3c">Connection Failed</div><div style="font-size:13px;color:#7a8499;text-align:center;max-width:400px">Could not connect to Supabase. Check your URL and anon key.</div><div style="background:#1a1a2e;color:#3aaa5e;font-family:monospace;padding:12px 20px;border-radius:8px;font-size:12px">${err.message||'See browser console'}</div></div>`;
 });
-</script>
-<script>
-if('serviceWorker' in navigator){
-  window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('/agritrack/sw.js')
-      .then(()=>console.log('AgriTrack PWA ready'))
-      .catch(e=>console.log('SW:',e));
-  });
-}
 </script>
 </body>
 </html>
