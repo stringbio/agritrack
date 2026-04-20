@@ -498,7 +498,7 @@ ${isA()?`<button class="abtn abtn-blue" onclick="PAGE='account-entry';R()">Manag
     <div style="position:relative;height:140px"><canvas id="connectDonut"></canvas></div>
   </div>
   <div class="card" style="padding:14px">
-    <div class="ctitle">Alliance Manager Progress %</div>
+    <div class="ctitle">${isA()?"Alliance Manager Progress %":"My Progress"}</div>
     <div style="position:relative;height:170px"><canvas id="amLeader"></canvas></div>
   </div>
 </div>
@@ -553,24 +553,6 @@ ${exAM?`<div class="banner banner-blue">Last saved on ${exAM.updatedAt}. Saving 
 <div style="margin-bottom:12px"><label class="fl" style="margin-bottom:7px">Connect Stage</label>
 <div style="display:flex;gap:7px;flex-wrap:wrap">${csOpts.map(s=>`<button type="button" class="csp${curCS===s?' sel':''}" onclick="selCS(this,'${s}')">${s}</button>`).join('')}</div>
 <input type="hidden" id="f-cs" value="${curCS}"></div>
-<!-- Stage-specific date fields - auto highlighted based on selected stage -->
-<div class="fg3" style="margin-bottom:9px">
-<div class="fg" id="f-initial-wrap" style="border:2px solid ${curCS==='Initial connect'?'#e6a817':'var(--border)'};border-radius:8px;padding:8px;background:${curCS==='Initial connect'?'#fffbf0':'#fafbfe'}">
-  <label class="fl" style="color:${curCS==='Initial connect'?'#b8860b':'var(--muted)'}">Initial Connect Date ${curCS==='Initial connect'?'★':''}</label>
-  <input type="date" id="f-initial-d" value="${exAM?.initialDate||''}" max="${today()}">
-  ${exAM?.initialDate?`<div style="font-size:10px;color:#b8860b;margin-top:2px">Recorded: ${fmtD(exAM.initialDate)}</div>`:'<div style="font-size:10px;color:var(--muted);margin-top:2px">Not recorded yet</div>'}
-</div>
-<div class="fg" id="f-trials-wrap" style="border:2px solid ${curCS==='Trials connect'?'#4a7ec7':'var(--border)'};border-radius:8px;padding:8px;background:${curCS==='Trials connect'?'#f0f7ff':'#fafbfe'}">
-  <label class="fl" style="color:${curCS==='Trials connect'?'#1a5276':'var(--muted)'}">Trials Connect Date ${curCS==='Trials connect'?'★':''}</label>
-  <input type="date" id="f-trials-d" value="${exAM?.trialsDate||''}" max="${today()}">
-  ${exAM?.trialsDate?`<div style="font-size:10px;color:#1a5276;margin-top:2px">Recorded: ${fmtD(exAM.trialsDate)}</div>`:'<div style="font-size:10px;color:var(--muted);margin-top:2px">Not recorded yet</div>'}
-</div>
-<div class="fg" id="f-business-wrap" style="border:2px solid ${curCS==='Business connect'?'#3aaa5e':'var(--border)'};border-radius:8px;padding:8px;background:${curCS==='Business connect'?'#eafaf1':'#fafbfe'}">
-  <label class="fl" style="color:${curCS==='Business connect'?'#145a32':'var(--muted)'}">Business Connect Date ${curCS==='Business connect'?'★':''}</label>
-  <input type="date" id="f-business-d" value="${exAM?.businessDate||''}" max="${today()}">
-  ${exAM?.businessDate?`<div style="font-size:10px;color:#145a32;margin-top:2px">Recorded: ${fmtD(exAM.businessDate)}</div>`:'<div style="font-size:10px;color:var(--muted);margin-top:2px">Not recorded yet</div>'}
-</div>
-</div>
 <div class="fg2">
 <div class="fg"><label class="fl">Date of Connect — Decision Maker</label><input type="date" id="f-acd" value="${exAM?.connectDateDM||''}" max="${today()}"></div>
 <div class="fg"><label class="fl">Next Date of Connect — Decision Maker</label><input type="date" id="f-ncd" value="${exAM?.nextConnectDateDM||''}" oninput="calcOD(this.value)"></div>
@@ -714,12 +696,13 @@ function drawCH(){
   const amEl=document.getElementById('amLeader');
   if(amEl){
     const stagePct={'Initial connect':33,'Trials connect':66,'Business connect':100};
-    const pts=DB.users.filter(u=>u.role==='partner');
+    // For admin: show all partners. For AM: show only themselves
+    const pts=isA()?DB.users.filter(u=>u.role==='partner'):DB.users.filter(u=>u.id===CU.id);
     const amData=pts.map(p=>{
       const pa=all.filter(a=>a.assignedPartnerId===p.id);
-      const avg=pa.length?Math.round(pa.reduce((s,a)=>s+(stagePct[a.am?.connectStage]||0),0)/pa.length):0;
-      return{name:p.name.split(' ')[0],avg};
-    }).filter(d=>d.avg>0||all.filter(a=>a.assignedPartnerId===pts.find(p=>p.name.split(' ')[0]===d.name)?.id).length>0);
+      const avg=pa.length?Math.round(pa.reduce((s,a)=>s+(stagePct[a.am&&a.am.connectStage]||0),0)/pa.length):0;
+      return{name:p.name.split(' ')[0],avg,total:pa.length};
+    }).filter(d=>d.total>0);
     if(amData.length){
       charts.am=new Chart(amEl,{type:'bar',data:{labels:amData.map(d=>d.name),datasets:[{data:amData.map(d=>d.avg),backgroundColor:amData.map(d=>d.avg>=66?'#3aaa5e':d.avg>=33?'#4a7ec7':'#e6a817'),borderRadius:6,borderSkipped:false}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%',font:{size:10}}},y:{ticks:{font:{size:10}}}}}});
     }
@@ -1133,9 +1116,10 @@ async function saveAMUpdate(accId,exId){
     action_item:ai,
     connect_date_dm:acd||null,
     next_connect_date_dm:ncd||null,
-    initial_date: document.getElementById('f-initial-d')?.value || (cs==='Initial connect'?stageDate:(prev.initialDate||null)),
-    trials_date:  document.getElementById('f-trials-d')?.value  || (cs==='Trials connect' ?stageDate:(prev.trialsDate||null)),
-    business_date:document.getElementById('f-business-d')?.value|| (cs==='Business connect'?stageDate:(prev.businessDate||null)),
+    // Auto-record stage date when stage changes — preserve previous stage dates
+    initial_date:  cs==='Initial connect'  ? (acd||stageDate) : (prev.initialDate||null),
+    trials_date:   cs==='Trials connect'   ? (acd||stageDate) : (prev.trialsDate||null),
+    business_date: cs==='Business connect' ? (acd||stageDate) : (prev.businessDate||null),
     updated_at:new Date().toISOString()
   };
   const{error}=await SB.from('pt_am_updates').upsert([row]);
