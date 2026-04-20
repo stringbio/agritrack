@@ -229,7 +229,7 @@ const DEFAULT_PARTNER_PERMS={
   viewDashboard:true,
   viewMyAccounts:true,
   viewFollowups:true,
-  /* Account Overview — admin fills, partner views */
+  /* Account Overview, partner views */
   viewAccountOverview:true,      // See company name, group, focus area, PM, type
   viewAccountPriority:true,      // See account priority and opportunity category
   viewAccountStage:true,         // See pipeline stage and overall status
@@ -313,15 +313,34 @@ async function bootDB(){
     .subscribe();
 }
 
-async function sbLog(action,record,field,oldv,newv){
-  await SB.from('pt_audit_log').insert([{user_name:CU.name,user_role:CU.role,action,record_name:record,field_name:field,old_value:oldv||'',new_value:newv||''}]);
+async function sbLog(action,record,field,oldv,newv,extra={}){
+  try{
+    await SB.from('pt_audit_log').insert([{
+      user_name:CU.name,
+      user_role:CU.role,
+      action,
+      record_name:record,
+      field_name:field,
+      old_value:oldv||'',
+      new_value:newv||'',
+      user_id:CU.id,
+      account_id:extra.accountId||null,
+      extra_data:Object.keys(extra).length?JSON.stringify(extra):null,
+    }]);
+  }catch(e){console.warn('audit log failed:',e);}
 }
 
 function authH(){if(ATAB==='reset')return rstH();if(ATAB==='signup')return signH();return loginH();}
 function fi(l,id,v='',t='text'){return`<div class="fg"><label class="fl">${l}</label><input type="${t}" id="${id}" value="${v}"></div>`;}
 
 function loginH(){return`<div class="abg"><div class="ac">
-<div class="alogo"><h2>AgriTrack</h2><p>Live Partner & Account Dashboard</p></div>
+<div class="alogo">
+<div style="display:flex;justify-content:center;margin-bottom:10px">
+  <img src="data:image/png;base64,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" style="height:36px;object-fit:contain" alt="String">
+</div>
+<h2 style="font-size:16px;color:#4a7ec7;margin-bottom:2px">AgriTrack</h2>
+<p>Alliance Manager & Account Dashboard</p>
+</div>
 ${AL?`<div class="alert ${AL.type}">${AL.msg}</div>`:''}
 <div class="atabs"><button class="atab act">Sign in</button><button class="atab" onclick="ATAB='signup';R()">Request Access</button></div>
 ${fi('Email','le','','email')}${fi('Password','lp','','password')}
@@ -330,10 +349,16 @@ ${fi('Email','le','','email')}${fi('Password','lp','','password')}
 </div></div>`;}
 
 function signH(){return`<div class="abg"><div class="ac">
-<div class="alogo"><h2>AgriTrack</h2><p>Request Partner Access</p></div>
+<div class="alogo">
+<div style="display:flex;justify-content:center;margin-bottom:10px">
+  <img src="data:image/png;base64,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" style="height:36px;object-fit:contain" alt="String">
+</div>
+<h2 style="font-size:16px;color:#4a7ec7;margin-bottom:2px">AgriTrack</h2>
+<p>Request Access</p>
+</div>
 ${AL?`<div class="alert ${AL.type}">${AL.msg}</div>`:''}
 <div class="atabs"><button class="atab" onclick="ATAB='login';R()">Sign in</button><button class="atab act">Request Access</button></div>
-<div class="infob">Accounts require admin approval before access is granted.</div>
+<div class="infob">Access requires admin approval before being granted.</div>
 ${fi('Full Name *','sn')}${fi('Work Email *','se','','email')}${fi('Password *','sp','','password')}${fi('Note for admin (optional)','snt')}
 <button class="abtn abtn-blue" style="width:100%;padding:10px;margin-top:5px" onclick="doSignup()">Submit Request</button>
 <div style="text-align:center;margin-top:9px"><button class="blk" onclick="ATAB='login';R()">Back to sign in</button></div>
@@ -397,6 +422,7 @@ function appH(){
     if(canPartner('viewMyAccounts')){tabs.push({id:'my-accounts',label:'My Accounts'});pgs['my-accounts']=pgMyAccs();}
     if(canPartner('updateAMConnect')){tabs.push({id:'am-update',label:'Update AM Connect'});pgs['am-update']=pgAMUpd();}
     if(canPartner('viewFollowups')){tabs.push({id:'followups',label:'Follow-Up Tracker'});pgs.followups=pgFU();}
+    tabs.push({id:'progress',label:'My Progress'});pgs.progress=pgProgress();
     tabs.push({id:'myaccount',label:'My Account'});pgs.myaccount=pgMyAcc();
   } else {
     tabs=[{id:'dashboard',label:'Dashboard'}];
@@ -409,7 +435,7 @@ function appH(){
     tabs.push({id:'myaccount',label:'My Account'});pgs.myaccount=pgMyAcc();
   }
   return`<div class="app">
-<div class="topbar"><h1><div class="live-dot"></div> AgriTrack</h1>
+<div class="topbar"><h1><img src="data:image/png;base64,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" style="height:24px;object-fit:contain;margin-right:4px" alt="String"><div class="live-dot"></div> AgriTrack</h1>
 <div class="topbar-r"><button class="ubtn" onclick="PAGE='myaccount';R()">${CU.name.split(' ').map(w=>w[0]).join('').slice(0,2)} ${CU.name}</button><button class="ubtn" onclick="doLogout()">Sign Out</button></div></div>
 <div class="nav-tabs">${tabs.map(t=>`<button class="ntab${PAGE===t.id?' act':''}" onclick="PAGE='${t.id}';AL=null;R()">${t.label}</button>`).join('')}</div>
 <div class="content">${AL?`<div class="alert ${AL.type}">${AL.msg}</div>`:''}${Object.entries(pgs).map(([k,v])=>`<div class="pg${PAGE===k?' act':''}">${v}</div>`).join('')}</div>
@@ -436,24 +462,23 @@ function pgDash(){
 <div class="kcard kc-r"><div class="klbl">Red</div><div class="knum">${red}</div><div class="ksub">Needs attention</div></div>
 <div class="kcard kc-y"><div class="klbl">Yellow</div><div class="knum">${yel}</div><div class="ksub">In progress</div></div>
 <div class="kcard kc-g"><div class="klbl">Green</div><div class="knum">${grn}</div><div class="ksub">On track</div></div>
-<div class="kcard kc-p"><div class="klbl">Overdue</div><div class="knum">${od}</div><div class="ksub">AM connect OD</div></div>
+<div class="kcard kc-p"><div class="klbl">Overdue</div><div class="knum">${od}</div><div class="ksub">AM Connect OD</div></div>
 </div>
 <div class="card"><div style="display:flex;gap:9px;flex-wrap:wrap;align-items:flex-end">
   <div class="tf-g"><div class="tf-l">Status</div><select class="tf-s" onchange="FILTERS.status=this.value;R()"><option value="">All</option><option value="red"${FILTERS.status==='red'?' selected':''}>Red</option><option value="yellow"${FILTERS.status==='yellow'?' selected':''}>Yellow</option><option value="green"${FILTERS.status==='green'?' selected':''}>Green</option></select></div>
-  ${isA()?`<div class="tf-g"><div class="tf-l">Partner</div><select class="tf-s" onchange="FILTERS.partner=this.value;R()"><option value="">All</option>${pts.map(p=>`<option value="${p.id}"${FILTERS.partner===p.id?' selected':''}>${p.name}</option>`).join('')}</select></div>`:''}
+  ${isA()?`<div class="tf-g"><div class="tf-l">Alliance Manager</div><select class="tf-s" onchange="FILTERS.partner=this.value;R()"><option value="">All</option>${pts.map(p=>`<option value="${p.id}"${FILTERS.partner===p.id?' selected':''}>${p.name}</option>`).join('')}</select></div>`:''}
   <div class="tf-g"><div class="tf-l">Stage</div><select class="tf-s" onchange="FILTERS.stage=this.value;R()"><option value="">All</option>${DB.stages.map(s=>`<option value="${s.id}"${FILTERS.stage===s.id?' selected':''}>${s.name}</option>`).join('')}</select></div>
   <button class="abtn-sm btn-ghost" style="padding:4px 10px;align-self:flex-end" onclick="FILTERS={status:'',partner:'',stage:''};R()">Clear</button>
 </div></div>
 <div class="g2">
 <div class="card"><div class="ctitle">Accounts Overview</div>
-<div class="tscroll"><table style="min-width:500px"><thead><tr><th>Account</th>${isA()?'<th>Partner</th>':''}<th>Stage</th><th>Status</th><th>AM Connect</th><th>OD</th></tr></thead>
+<div class="tscroll"><table style="min-width:500px"><thead><tr><th>Account</th>${isA()?'<th>Alliance Manager</th>':''}<th>Stage</th><th>Status</th><th>AM Connect</th><th>OD</th></tr></thead>
 <tbody>${f.slice(0,8).map(a=>`<tr><td><strong>${a.companyName}</strong><div style="font-size:10px;color:var(--muted)">${a.accountGroup}</div></td>${isA()?`<td style="font-size:11px">${a.partnerName}</td>`:''}<td style="font-size:11px">${a.stageName}</td><td><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green'}</span></td><td style="font-size:11px">${a.am?.connectStage||'<span style="color:var(--muted)">Not updated</span>'}</td><td>${a.amOD>0?`<span class="oday">+${a.amOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td></tr>`).join('')}</tbody></table></div></div>
 <div class="card"><div class="ctitle">Overdue AM Connects</div>
 ${myAll.filter(a=>a.amOD>0).slice(0,5).map(a=>`<div style="padding:7px 10px;border:1px solid #fde8e8;border-radius:7px;background:#fff8f8;margin-bottom:7px;display:flex;justify-content:space-between;align-items:center"><div><strong style="font-size:12px">${a.companyName}</strong><div style="font-size:11px;color:var(--muted)">${a.partnerName} · Next: ${fmtD(a.am?.nextConnectDateDM)}</div></div><span class="oday">+${a.amOD}d</span></div>`).join('')||'<div style="text-align:center;padding:20px;color:var(--muted);font-size:12px">No overdue items</div>'}
 </div></div>
 <div style="display:flex;gap:10px;justify-content:center;margin-top:4px">
-${isA()?`<button class="abtn abtn-blue" onclick="PAGE='account-entry';R()">Manage Account Records</button>`:`<button class="abtn abtn-blue" onclick="PAGE='am-update';R()">Update AM Connect</button>`}
-<button class="abtn abtn-orange" onclick="openM('schedule-meeting')">Schedule Meeting</button></div>`;}
+${isA()?`<button class="abtn abtn-blue" onclick="PAGE='account-entry';R()">Manage Account Records</button>`:`<button class="abtn abtn-blue" onclick="PAGE='am-update';R()">Update AM Connect</button>`}</div>`;}
 
 function pgMyAccs(){
   if(!canPartner('viewMyAccounts'))return'<div class="card"><div style="text-align:center;padding:40px;color:#e74c3c;font-size:13px">⛔ You do not have permission to view assigned accounts.</div></div>';
@@ -499,7 +524,7 @@ ${canPartner('viewCrop')?`<div class="fg"><label class="fl">Crop</label><div cla
 ${canPartner('viewAccountStage')?`<div class="fg"><label class="fl">Stage</label><div class="ro-box">${eSel?.stageName||'—'}</div></div>
 <div class="fg"><label class="fl">Overall Status</label><div class="ro-box"><span class="pill ${sc(sel.overallStatus)}">${sel.overallStatus==='red'?'Red':sel.overallStatus==='yellow'?'Yellow':'Green'}</span></div></div>`:''}
 </div></div>`:'<div class="card" style="border-color:#fde8e8"><div style="padding:14px;text-align:center;color:#e74c3c;font-size:12px">⛔ You do not have permission to view account overview details</div></div>'}
-<div class="card"><div class="sh sh-am">AM Connect <span style="font-size:11px;font-weight:500;margin-left:3px">(you fill this)</span></div>
+<div class="card"><div class="sh sh-am">AM Connect <span style="font-size:11px;font-weight:500;margin-left:3px">(Alliance Manager fills this)</span></div>
 ${exAM?`<div class="banner banner-blue">Last saved on ${exAM.updatedAt}. Saving again updates for everyone.</div>`:`<div class="banner banner-green">No AM Connect entry yet for this account.</div>`}
 <div style="margin-bottom:12px"><label class="fl" style="margin-bottom:7px">Connect Stage</label>
 <div style="display:flex;gap:7px;flex-wrap:wrap">${csOpts.map(s=>`<button type="button" class="csp${curCS===s?' sel':''}" onclick="selCS(this,'${s}')">${s}</button>`).join('')}</div>
@@ -515,7 +540,7 @@ ${exAM?`<div class="banner banner-blue">Last saved on ${exAM.updatedAt}. Saving 
 <button class="abtn abtn-blue" onclick="saveAMUpdate('${sel.id}','${exAM?.id||''}')">Save AM Connect</button>
 <button class="abtn-sm btn-ghost" style="padding:6px 12px;font-size:12px" onclick="SEL_ACC=null;R()">Cancel</button>
 </div></div>
-${canPartner('viewTrials')?`${canPartner('viewTrials')?`<div class="card"><div class="sh sh-tr">Trials <span style="font-size:11px;font-weight:500;margin-left:3px">(admin fills — you can view)</span></div>
+${canPartner('viewTrials')?`${canPartner('viewTrials')?`<div class="card"><div class="sh sh-tr">Trials <span style="font-size:11px;font-weight:500;margin-left:3px">(Trial Details)</span></div>
 <div class="fg3">
 <div class="fg"><label class="fl">Trial Stage</label><div class="ro-box">${sel.trials.stage||'—'}</div></div>
 <div class="fg"><label class="fl">Trial Status</label><div class="ro-box">${sel.trials.status?`<span class="pill ${sc(sel.trials.status)}">${sel.trials.status==='red'?'Red':sel.trials.status==='yellow'?'Yellow':'Green'}</span>`:'—'}</div></div>
@@ -537,9 +562,9 @@ ${DB.accounts.map(a=>`<div onclick="window._aSel='${a.id}';R()" style="padding:9
 </div>
 <div><div class="card">
 <div class="sh sh-ov">${acc?`Edit: ${acc.companyName}`:'New Account Record'}</div>
-<div class="divlbl">Account Overview — admin fills</div>
+<div class="divlbl">Account Overview</div>
 <div class="fg4">
-<div class="fg full"><label class="fl">Assign to Partner *</label><select id="fa-p">${DB.users.filter(u=>u.role==='partner').map(p=>`<option value="${p.id}"${acc?.assignedPartnerId===p.id?' selected':''}>${p.name}</option>`).join('')}</select></div>
+<div class="fg full"><label class="fl">Assign to Alliance Manager *</label><select id="fa-p">${DB.users.filter(u=>u.role==='partner').map(p=>`<option value="${p.id}"${acc?.assignedPartnerId===p.id?' selected':''}>${p.name}</option>`).join('')}</select></div>
 <div class="fg"><label class="fl">Company Name *</label><input type="text" id="fa-cn" value="${acc?.companyName||''}"></div>
 <div class="fg"><label class="fl">Company Email</label><input type="email" id="fa-ce" value="${acc?.companyEmail||''}"></div>
 <div class="fg"><label class="fl">Focus Area</label>${ddS('fa-fa','focusArea',acc?.focusArea||'')}</div>
@@ -584,13 +609,13 @@ function pgFU(){
 ${isA()?`<button class="nfbtn" onclick="PAGE='account-entry';window._aSel='';R()">+ New Account</button>`:''}
 </div></div>
 <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
-${isA()?`<select style="padding:4px 9px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:#fff;outline:none" onchange="ASGN=this.value;PIDX=0;R()"><option value="all">All Partners</option>${pts.map(p=>`<option value="${p.id}"${ASGN===p.id?' selected':''}>${p.name}</option>`).join('')}</select>`:''}
+${isA()?`<select style="padding:4px 9px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:#fff;outline:none" onchange="ASGN=this.value;PIDX=0;R()"><option value="all">All Alliance Managers</option>${pts.map(p=>`<option value="${p.id}"${ASGN===p.id?' selected':''}>${p.name}</option>`).join('')}</select>`:''}
 <button style="padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;border:2px solid ${SF.red?'#e74c3c':'#f5b7b1'};background:${SF.red?'#e74c3c':'#fdecea'};color:${SF.red?'#fff':'#c0392b'}" onclick="SF.red=!SF.red;PIDX=0;R()">Overdue</button>
 <button style="padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;border:2px solid ${SF.yellow?'#e6a817':'#f5d47a'};background:${SF.yellow?'#e6a817':'#fef6e4'};color:${SF.yellow?'#fff':'#b8860b'}" onclick="SF.yellow=!SF.yellow;PIDX=0;R()">Due Soon</button>
 <button style="padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;border:2px solid ${SF.green?'#3aaa5e':'#a9dfbf'};background:${SF.green?'#3aaa5e':'#eafaf1'};color:${SF.green?'#fff':'#1e8449'}" onclick="SF.green=!SF.green;PIDX=0;R()">Completed</button>
 <button class="abtn-sm btn-ghost" style="padding:3px 9px" onclick="SF={red:false,yellow:false,green:false};SEARCH='';ASGN='';PIDX=0;R()">Clear</button>
 </div>
-<div class="tscroll"><table style="min-width:850px"><thead><tr><th>Account</th>${isA()?'<th>Partner</th>':''}<th>Stage</th><th>Status</th><th>Connect Stage</th><th>Connect Date</th><th>Next Connect</th><th>AM OD</th><th>Trial Stage</th><th>Trial OD</th><th>Actions</th></tr></thead>
+<div class="tscroll"><table style="min-width:850px"><thead><tr><th>Account</th>${isA()?'<th>Alliance Manager</th>':''}<th>Stage</th><th>Status</th><th>Connect Stage</th><th>Connect Date</th><th>Next Connect</th><th>AM OD</th><th>Trial Stage</th><th>Trial OD</th><th>Actions</th></tr></thead>
 <tbody>${paged.length?paged.map(a=>`<tr><td><strong>${a.companyName}</strong><div style="font-size:10px;color:var(--muted)">${a.accountGroup}</div></td>${isA()?`<td style="font-size:11px">${a.partnerName}</td>`:''}<td style="font-size:11px;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.stageName}</td><td><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green'}</span></td><td style="font-size:11px">${a.am?.connectStage||'—'}</td><td style="font-size:11px">${fmtD(a.am?.connectDateDM)}</td><td style="font-size:11px">${fmtD(a.am?.nextConnectDateDM)}</td><td>${a.amOD>0?`<span class="oday">+${a.amOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td><td style="font-size:11px">${a.trials.stage||'—'}</td><td>${a.trOD>0?`<span class="oday">+${a.trOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td><td>${isA()?`<button class="abtn-sm btn-blue" style="padding:2px 7px;font-size:10px" onclick="window._aSel='${a.id}';PAGE='account-entry';R()">Edit</button>`:`<button class="abtn-sm btn-blue" style="padding:2px 7px;font-size:10px" onclick="SEL_ACC='${a.id}';PAGE='am-update';R()">Update AM</button>`}</td></tr>`).join(''):'<tr><td colspan="12" style="text-align:center;padding:20px;color:var(--muted)">No records found</td></tr>'}
 </tbody></table></div>
 <div style="display:flex;justify-content:space-between;align-items:center;margin-top:9px"><span style="font-size:11px;color:var(--muted)">${all.length} records</span>
@@ -612,8 +637,8 @@ function pgAna(){
 <div class="card"><div class="ctitle">Overdue AM Connects by Partner</div>
 <div style="position:relative;height:${Math.max(180,byP.length*48+60)}px"><canvas id="barC"></canvas></div></div>
 </div>
-<div class="card"><div class="ctitle">Partner Activity Summary</div>
-<table><thead><tr><th>Partner</th><th>Accounts</th><th>Red</th><th>Yellow</th><th>Green</th><th>AM Updated</th><th>AM Overdue</th></tr></thead>
+<div class="card"><div class="ctitle">Alliance Manager Activity Summary</div>
+<table><thead><tr><th>Alliance Manager</th><th>Accounts</th><th>Red</th><th>Yellow</th><th>Green</th><th>AM Updated</th><th>AM Overdue</th></tr></thead>
 <tbody>${DB.users.filter(u=>u.role==='partner').map(p=>{const pa=all.filter(a=>a.assignedPartnerId===p.id);const r=pa.filter(a=>a.overallStatus==='red').length,y=pa.filter(a=>a.overallStatus==='yellow').length,g=pa.filter(a=>a.overallStatus==='green').length,amU=pa.filter(a=>a.am).length,od=pa.filter(a=>a.amOD>0).length;return`<tr><td><strong>${p.name}</strong></td><td>${pa.length}</td><td>${r>0?`<span class="pill p-red" style="font-size:10px">${r}</span>`:'—'}</td><td>${y>0?`<span class="pill p-yellow" style="font-size:10px">${y}</span>`:'—'}</td><td>${g>0?`<span class="pill p-green" style="font-size:10px">${g}</span>`:'—'}</td><td style="font-size:11px">${amU}/${pa.length}</td><td>${od>0?`<span class="oday">${od}</span>`:'<span style="color:#3aaa5e">0</span>'}</td></tr>`;}).join('')}
 </tbody></table></div>`;}
 
@@ -690,8 +715,8 @@ function pgAdmin(){
   const partnerPanel=can('managePartners')?`
   <div class="card" style="margin-bottom:12px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <div class="ctitle" style="margin-bottom:0">Partner Accounts (${pts.length})</div>
-      <button class="nfbtn" onclick="openM('add-partner')">+ Add Partner</button>
+      <div class="ctitle" style="margin-bottom:0">Alliance Manager Accounts (${pts.length})</div>
+      <button class="nfbtn" onclick="openM('add-partner')">+ Add Alliance Manager</button>
     </div>
     <table><thead><tr><th>Name</th><th>Email</th><th>Accounts</th><th>Permissions</th><th>Actions</th></tr></thead>
     <tbody>${pts.map(p=>{
@@ -753,6 +778,89 @@ function pgAdmin(){
 <div>${stagesPanel}${ddPanel}</div>
 </div>`;}
 
+
+function pgProgress(){
+  /* Alliance Manager progress report — shows connect stage progress per account */
+  const myAccs=enAccs().filter(a=>a.assignedPartnerId===CU.id);
+  const stages=['Initial connect','Trials connect','Business connect'];
+  const stageColors={'Initial connect':'#e6a817','Trials connect':'#4a7ec7','Business connect':'#3aaa5e'};
+  const stagePct={'Initial connect':33,'Trials connect':66,'Business connect':100};
+
+  if(!myAccs.length)return`<div class="card"><div style="text-align:center;padding:28px;color:var(--muted)">No accounts assigned yet.</div></div>`;
+
+  // Summary stats
+  const done=myAccs.filter(a=>a.am?.connectStage==='Business connect').length;
+  const inProgress=myAccs.filter(a=>a.am?.connectStage&&a.am.connectStage!=='Business connect').length;
+  const notStarted=myAccs.filter(a=>!a.am?.connectStage).length;
+  const avgPct=myAccs.length?Math.round(myAccs.reduce((sum,a)=>{return sum+(stagePct[a.am?.connectStage]||0);},0)/myAccs.length):0;
+
+  return`
+<div style="font-size:17px;font-weight:700;margin-bottom:3px">My Progress Report</div>
+<div style="font-size:12px;color:var(--muted);margin-bottom:16px">Track your AM Connect progress across all assigned accounts.</div>
+
+<!-- Summary KPIs -->
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
+  <div class="kcard kc-b"><div class="klbl">Total Accounts</div><div class="knum">${myAccs.length}</div></div>
+  <div class="kcard kc-g"><div class="klbl">Business Connect</div><div class="knum">${done}</div><div class="ksub">Completed</div></div>
+  <div class="kcard kc-y"><div class="klbl">In Progress</div><div class="knum">${inProgress}</div><div class="ksub">Ongoing</div></div>
+  <div class="kcard kc-r"><div class="klbl">Not Started</div><div class="knum">${notStarted}</div><div class="ksub">Pending</div></div>
+</div>
+
+<!-- Overall progress bar -->
+<div class="card" style="margin-bottom:16px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <div class="ctitle" style="margin-bottom:0">Overall Portfolio Progress</div>
+    <div style="font-size:20px;font-weight:800;color:#4a7ec7">${avgPct}%</div>
+  </div>
+  <div style="background:#f0f3f8;border-radius:10px;height:12px;overflow:hidden">
+    <div style="background:linear-gradient(90deg,#4a7ec7,#3aaa5e);height:100%;width:${avgPct}%;border-radius:10px;transition:width .5s"></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10px;color:var(--muted)">
+    <span>Initial Connect (33%)</span><span>Trials Connect (66%)</span><span>Business Connect (100%)</span>
+  </div>
+</div>
+
+<!-- Per account progress -->
+<div class="card">
+  <div class="ctitle">Account-wise Progress</div>
+  ${myAccs.map(a=>{
+    const cs=a.am?.connectStage||'';
+    const pct=stagePct[cs]||0;
+    const col=stageColors[cs]||'#dde3ec';
+    const od=a.amOD>0;
+    return`<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #f0f3f8">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+        <div>
+          <div style="font-size:13px;font-weight:700">${a.companyName}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">${a.accountGroup} · ${a.stageName}</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          ${cs?`<span style="background:${col}22;color:${col};border:1px solid ${col}44;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700">${cs}</span>`:'<span style="background:#f4f6fb;color:var(--muted);padding:2px 10px;border-radius:12px;font-size:11px">Not started</span>'}
+          ${od?`<span class="oday">+${a.amOD}d OD</span>`:''}
+          <span style="font-size:14px;font-weight:800;color:${col||'var(--muted)'}">${pct}%</span>
+        </div>
+      </div>
+      <!-- Progress bar -->
+      <div style="background:#f0f3f8;border-radius:8px;height:8px;overflow:hidden;margin-bottom:6px">
+        <div style="background:${col||'#dde3ec'};height:100%;width:${pct}%;border-radius:8px;transition:width .5s"></div>
+      </div>
+      <!-- Stage milestones -->
+      <div style="display:flex;gap:0;position:relative">
+        ${stages.map((s,i)=>{
+          const done2=pct>=(i+1)*33;
+          const active=cs===s;
+          return`<div style="flex:1;text-align:center">
+            <div style="width:14px;height:14px;border-radius:50%;border:2px solid ${done2||active?stageColors[s]:'#dde3ec'};background:${done2?stageColors[s]:'#fff'};margin:0 auto 3px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff">${done2?'✓':''}</div>
+            <div style="font-size:9px;color:${active?stageColors[s]:'var(--muted)'};font-weight:${active?'700':'400'}">${s}</div>
+            ${a.am&&cs===s&&a.am.connectDateDM?`<div style="font-size:9px;color:var(--muted)">${fmtD(a.am.connectDateDM)}</div>`:''}
+          </div>`;}).join('')}
+      </div>
+      ${a.am?.actionItem?`<div style="margin-top:6px;font-size:11px;color:#4a5568"><span style="color:var(--muted)">Action:</span> ${a.am.actionItem}</div>`:''}
+    </div>`;}).join('')}
+</div>`;
+}
+
+
 function pgMyAcc(){return`<div class="g2">
 <div class="card"><div class="ctitle">Profile</div>
 <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px"><div class="av ${CU.role==='admin'?'ava':CU.role==='superadmin'?'avs':'avp'}" style="width:44px;height:44px;font-size:14px">${CU.name.split(' ').map(w=>w[0]).join('').slice(0,2)}</div>
@@ -768,7 +876,7 @@ function mH(){
   if(!MODAL)return'';
   const{type,id}=MODAL;let c='';
   const mfi=(l,iid,v='',t='text')=>`<div class="fg"><label class="fl">${l}</label><input type="${t}" id="${iid}" value="${v}"></div>`;
-  if(type==='add-partner'||type==='edit-partner'){const p=id?DB.users.find(x=>x.id===id):null;c=`<div class="mt">${id?'Edit Partner':'Add Partner'}</div>${mfi('Full Name *','mn',p?.name||'')}${mfi('Email *','me',p?.email||'','email')}${!id?mfi('Password *','mp','','password'):''}<div class="ma"><button class="abtn-sm btn-ghost" onclick="closeM()">Cancel</button><button class="abtn abtn-blue" style="padding:6px 16px" onclick="savePart('${id||''}')">Save</button></div>`;}
+  if(type==='add-partner'||type==='edit-partner'){const p=id?DB.users.find(x=>x.id===id):null;c=`<div class="mt">${id?'Edit Alliance Manager':'Add Alliance Manager'}</div>${mfi('Full Name *','mn',p?.name||'')}${mfi('Email *','me',p?.email||'','email')}${!id?mfi('Password *','mp','','password'):''}<div class="ma"><button class="abtn-sm btn-ghost" onclick="closeM()">Cancel</button><button class="abtn abtn-blue" style="padding:6px 16px" onclick="savePart('${id||''}')">Save</button></div>`;}
   else if(type==='add-admin'||type==='edit-admin'){
     const a=id?DB.users.find(x=>x.id===id):null;
     c=`<div class="mt">${id?'Edit Admin':'Add Admin'}</div>
@@ -831,7 +939,6 @@ function mH(){
     }).join('')}
     <div class="ma"><button class="abtn-sm btn-ghost" onclick="closeM()">Cancel</button><button class="abtn" style="background:#1e8449;color:#fff;padding:6px 16px" onclick="savePartnerPerms('${id}')">Save Access</button></div>`;}
   }
-  else if(type==='schedule-meeting'){c=`<div class="mt">Schedule Meeting</div><div class="fg2"><div class="fg"><label class="fl">Account</label><select id="sm-co"><option value="">Select...</option>${DB.accounts.map(a=>`<option value="${a.id}">${a.companyName}</option>`).join('')}</select></div><div class="fg"><label class="fl">Meeting Date</label><input type="date" id="sm-date"></div><div class="fg"><label class="fl">Connect Type</label><select id="sm-type">${(DB.dd.connectStage||[]).map(o=>`<option>${o}</option>`).join('')}</select></div><div class="fg"><label class="fl">Partner</label><select id="sm-pa">${DB.users.filter(u=>u.role==='partner').map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select></div></div><div class="fg"><label class="fl">Notes</label><textarea id="sm-notes"></textarea></div><div class="ma"><button class="abtn-sm btn-ghost" onclick="closeM()">Cancel</button><button class="abtn abtn-orange" style="padding:6px 16px" onclick="closeM();sal('Meeting scheduled!','as')">Schedule</button></div>`;}
   return`<div class="mo" onclick="if(event.target===this)closeM()"><div class="mc">${c}</div></div>`;}
 
 function openM(t,id=null){MODAL={type:t,id};R();}
@@ -846,7 +953,12 @@ async function saveAMUpdate(accId,exId){
   const row={id:exId||uid(),account_id:accId,partner_id:CU.id,connect_stage:cs,action_item:ai,connect_date_dm:acd||null,next_connect_date_dm:ncd||null,updated_at:new Date().toISOString()};
   const{error}=await SB.from('pt_am_updates').upsert([row]);
   if(error)return sal('Error: '+error.message,'ae');
-  await sbLog('Updated AM Connect',acc?.companyName||accId,'amConnect','',cs);
+  // Log detailed audit entries per field
+  const prev=DB.amUpdates.find(x=>x.id===exId)||{};
+  if(cs!==prev.connectStage)await sbLog('Updated Connect Stage',acc?.companyName||accId,'connectStage',prev.connectStage||'',cs,{accountId:accId,userId:CU.id});
+  if(acd!==prev.connectDateDM)await sbLog('Updated Connect Date',acc?.companyName||accId,'connectDateDM',prev.connectDateDM||'',acd,{accountId:accId,userId:CU.id});
+  if(ncd!==prev.nextConnectDateDM)await sbLog('Updated Next Connect Date',acc?.companyName||accId,'nextConnectDateDM',prev.nextConnectDateDM||'',ncd,{accountId:accId,userId:CU.id});
+  if(ai!==prev.actionItem)await sbLog('Updated Action Item',acc?.companyName||accId,'actionItem',prev.actionItem||'',ai,{accountId:accId,userId:CU.id});
   sal('AM Connect saved — visible to all users!','as');
 }
 
@@ -857,7 +969,7 @@ async function saveAcc(id){
   if(!id)row.created_at=new Date().toISOString();
   const{error}=await SB.from('pt_accounts').upsert([row]);
   if(error)return sal('Error: '+error.message,'ae');
-  await sbLog(id?'Updated account':'Created account',cn,'overview','','saved');
+  await sbLog(id?'Updated account record':'Created account record',cn,'overview','',id?'updated':'created',{accountId:row.id,userId:CU.id});
   window._aSel=row.id;sal(id?'Account updated!':'Account created!','as');
 }
 
