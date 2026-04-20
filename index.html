@@ -222,6 +222,45 @@ const PERM_LABELS={
   manageDropdowns:'Manage Dropdown Options',
   manageAdmins:'Manage Other Admins',
 };
+
+/* Partner permissions */
+const DEFAULT_PARTNER_PERMS={
+  /* Navigation */
+  viewDashboard:true,
+  viewMyAccounts:true,
+  viewFollowups:true,
+  /* Account Overview — admin fills, partner views */
+  viewAccountOverview:true,      // See company name, group, focus area, PM, type
+  viewAccountPriority:true,      // See account priority and opportunity category
+  viewAccountStage:true,         // See pipeline stage and overall status
+  viewCrop:true,                 // See crop information
+  /* AM Connect — partner fills */
+  updateAMConnect:true,          // Fill connect dates, stage, action item
+  /* Trials — admin fills, partner views */
+  viewTrials:true,               // See trial stage, status, connect date
+  viewTrialRemarks:true,         // See agri manager and remarks
+};
+
+const PARTNER_PERM_LABELS={
+  viewDashboard:       {label:'View Dashboard',          group:'Navigation',       desc:'Summary KPIs — total accounts, overdue, status counts'},
+  viewMyAccounts:      {label:'View My Accounts',        group:'Navigation',       desc:'See list of all accounts assigned to them'},
+  viewFollowups:       {label:'View Follow-Up Tracker',  group:'Navigation',       desc:'See the full follow-up tracker table'},
+  viewAccountOverview: {label:'View Account Overview',   group:'Account Overview', desc:'See company name, group, focus area, program manager, company type'},
+  viewAccountPriority: {label:'View Priority & Category',group:'Account Overview', desc:'See account priority and opportunity category'},
+  viewAccountStage:    {label:'View Stage & Status',     group:'Account Overview', desc:'See pipeline stage and overall status (Red/Yellow/Green)'},
+  viewCrop:            {label:'View Crop Information',   group:'Account Overview', desc:'See crop assigned to the account'},
+  updateAMConnect:     {label:'Update AM Connect',       group:'AM Connect',       desc:'Fill connect dates, connect stage pill and action items'},
+  viewTrials:          {label:'View Trial Details',      group:'Trials',           desc:'See trial stage, trial status and trial connect date'},
+  viewTrialRemarks:    {label:'View Agri Manager & Remarks', group:'Trials',       desc:'See agri manager name and remarks/notes'},
+};
+
+/* Check partner permission */
+function canPartner(perm){
+  if(!CU)return false;
+  if(CU.role==='superadmin'||CU.role==='admin')return true;
+  const perms=CU.partner_permissions||{...DEFAULT_PARTNER_PERMS};
+  return perms[perm]!==false;
+}
 function sal(m,t,d=3500){AL={msg:m,type:t};R();if(d)setTimeout(()=>{AL=null;R();},d);}
 function R(){if(BOOT)return;document.getElementById('root').innerHTML=CU?appH():authH();if(CU&&PAGE==='analytics')setTimeout(drawCH,60);}
 
@@ -288,7 +327,6 @@ ${AL?`<div class="alert ${AL.type}">${AL.msg}</div>`:''}
 ${fi('Email','le','','email')}${fi('Password','lp','','password')}
 <div style="text-align:right;margin-bottom:14px;margin-top:-4px"><button class="blk" onclick="ATAB='reset';RS=1;R()">Forgot password?</button></div>
 <button class="abtn abtn-blue" style="width:100%;padding:10px" onclick="doLogin()">Sign In</button>
-<div class="infob" style="margin-top:14px;margin-bottom:0">Admin: admin1@pt.com / Admin@123<br>Partner: rahul@pt.com / Partner@1</div>
 </div></div>`;}
 
 function signH(){return`<div class="abg"><div class="ac">
@@ -354,8 +392,12 @@ async function doLogout(){CU=null;AL=null;ATAB='login';localStorage.removeItem('
 function appH(){
   let tabs,pgs;
   if(!isA()){
-    tabs=[{id:'dashboard',label:'Dashboard'},{id:'my-accounts',label:'My Accounts'},{id:'am-update',label:'Update AM Connect'},{id:'followups',label:'Follow-Up Tracker'},{id:'myaccount',label:'My Account'}];
-    pgs={dashboard:pgDash(),'my-accounts':pgMyAccs(),'am-update':pgAMUpd(),followups:pgFU(),myaccount:pgMyAcc()};
+    tabs=[{id:'dashboard',label:'Dashboard'}];
+    pgs={dashboard:pgDash()};
+    if(canPartner('viewMyAccounts')){tabs.push({id:'my-accounts',label:'My Accounts'});pgs['my-accounts']=pgMyAccs();}
+    if(canPartner('updateAMConnect')){tabs.push({id:'am-update',label:'Update AM Connect'});pgs['am-update']=pgAMUpd();}
+    if(canPartner('viewFollowups')){tabs.push({id:'followups',label:'Follow-Up Tracker'});pgs.followups=pgFU();}
+    tabs.push({id:'myaccount',label:'My Account'});pgs.myaccount=pgMyAcc();
   } else {
     tabs=[{id:'dashboard',label:'Dashboard'}];
     pgs={dashboard:pgDash()};
@@ -414,6 +456,7 @@ ${isA()?`<button class="abtn abtn-blue" onclick="PAGE='account-entry';R()">Manag
 <button class="abtn abtn-orange" onclick="openM('schedule-meeting')">Schedule Meeting</button></div>`;}
 
 function pgMyAccs(){
+  if(!canPartner('viewMyAccounts'))return'<div class="card"><div style="text-align:center;padding:40px;color:#e74c3c;font-size:13px">⛔ You do not have permission to view assigned accounts.</div></div>';
   const myAccs=enAccs().filter(a=>a.assignedPartnerId===CU.id);
   return`<div style="font-size:17px;font-weight:700;margin-bottom:3px">My Assigned Accounts</div>
 <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Click any account to update your AM Connect progress.</div>
@@ -425,10 +468,11 @@ ${!myAccs.length?`<div class="card"><div style="text-align:center;padding:28px;c
 <div><div style="color:var(--muted)">Priority</div><strong>${a.accountPriority||'—'}</strong></div>
 <div><div style="color:var(--muted)">Crop</div><strong>${a.crop||'—'}</strong></div>
 <div><div style="color:var(--muted)">Connect Stage</div><strong>${a.am?.connectStage||'<span style="color:var(--muted)">Not set</span>'}</strong></div></div>
-${a.am?`<div style="margin-top:7px;padding-top:7px;border-top:1px solid #f0f3f8;display:flex;gap:14px;font-size:11px"><span><span style="color:var(--muted)">Last:</span> <strong>${fmtD(a.am.connectDateDM)}</strong></span><span><span style="color:var(--muted)">Next:</span> <strong>${fmtD(a.am.nextConnectDateDM)}</strong></span></div>`:`<div style="margin-top:7px;padding-top:7px;border-top:1px solid #f0f3f8;font-size:11px;color:#e6a817;font-weight:600">No AM Connect entry yet — click to add</div>`}
+${canPartner('updateAMConnect')?a.am?`<div style="margin-top:7px;padding-top:7px;border-top:1px solid #f0f3f8;display:flex;gap:14px;font-size:11px"><span><span style="color:var(--muted)">Last:</span> <strong>${fmtD(a.am.connectDateDM)}</strong></span><span><span style="color:var(--muted)">Next:</span> <strong>${fmtD(a.am.nextConnectDateDM)}</strong></span></div>`:`<div style="margin-top:7px;padding-top:7px;border-top:1px solid #f0f3f8;font-size:11px;color:#e6a817;font-weight:600">No AM Connect entry yet — click to add</div>`:'<div style="margin-top:7px;padding-top:7px;border-top:1px solid #f0f3f8;font-size:11px;color:#e74c3c">⛔ AM Connect update not permitted</div>'}
 </div>`).join('')}`;}
 
 function pgAMUpd(){
+  if(!canPartner('updateAMConnect'))return'<div class="card"><div style="text-align:center;padding:40px;color:#e74c3c;font-size:13px">⛔ You do not have permission to update AM Connect.</div></div>';
   const myAccs=enAccs().filter(a=>a.assignedPartnerId===CU.id);
   const sel=SEL_ACC?DB.accounts.find(a=>a.id===SEL_ACC):null;
   const eSel=sel?enAccs().find(a=>a.id===SEL_ACC):null;
@@ -442,19 +486,19 @@ function pgAMUpd(){
 ${myAccs.map(a=>`<div onclick="SEL_ACC='${a.id}';R()" style="padding:9px 11px;border:2px solid ${SEL_ACC===a.id?'#4a7ec7':'var(--border)'};border-radius:8px;cursor:pointer;background:${SEL_ACC===a.id?'#f0f7ff':'#fff'}"><div style="font-size:12px;font-weight:700">${a.companyName}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${a.accountGroup} · <span class="pill ${sc(a.overallStatus)}" style="font-size:10px;padding:1px 5px">${a.overallStatus}</span></div></div>`).join('')}
 </div></div>
 ${!sel?`<div class="card"><div style="text-align:center;padding:18px;color:var(--muted)">Select an account above to update AM Connect</div></div>`:`
-<div class="card"><div class="sh sh-ov">Account Overview <span style="font-size:11px;font-weight:500;margin-left:3px">(set by admin — read only)</span></div>
+${canPartner('viewAccountOverview')?`<div class="card"><div class="sh sh-ov">Account Overview <span style="font-size:11px;font-weight:500;margin-left:3px">(set by admin — read only)</span></div>
 <div class="fg4">
 <div class="fg"><label class="fl">Account Name</label><div class="ro-box">${sel.companyName}</div></div>
 <div class="fg"><label class="fl">Account Group</label><div class="ro-box">${sel.accountGroup||'—'}</div></div>
 <div class="fg"><label class="fl">Focus Area</label><div class="ro-box">${sel.focusArea||'—'}</div></div>
 <div class="fg"><label class="fl">Program Manager</label><div class="ro-box">${sel.programManager||'—'}</div></div>
-<div class="fg"><label class="fl">Company Type</label><div class="ro-box">${sel.companyType||'—'}</div></div>
+${canPartner('viewAccountPriority')?`<div class="fg"><label class="fl">Company Type</label><div class="ro-box">${sel.companyType||'—'}</div></div>
 <div class="fg"><label class="fl">Account Priority</label><div class="ro-box">${sel.accountPriority||'—'}</div></div>
-<div class="fg"><label class="fl">Opportunity Category</label><div class="ro-box">${sel.opportunityCategory||'—'}</div></div>
-<div class="fg"><label class="fl">Crop</label><div class="ro-box">${sel.crop||'—'}</div></div>
-<div class="fg"><label class="fl">Stage</label><div class="ro-box">${eSel?.stageName||'—'}</div></div>
-<div class="fg"><label class="fl">Overall Status</label><div class="ro-box"><span class="pill ${sc(sel.overallStatus)}">${sel.overallStatus==='red'?'Red':sel.overallStatus==='yellow'?'Yellow':'Green'}</span></div></div>
-</div></div>
+<div class="fg"><label class="fl">Opportunity Category</label><div class="ro-box">${sel.opportunityCategory||'—'}</div></div>`:''}
+${canPartner('viewCrop')?`<div class="fg"><label class="fl">Crop</label><div class="ro-box">${sel.crop||'—'}</div></div>`:''}
+${canPartner('viewAccountStage')?`<div class="fg"><label class="fl">Stage</label><div class="ro-box">${eSel?.stageName||'—'}</div></div>
+<div class="fg"><label class="fl">Overall Status</label><div class="ro-box"><span class="pill ${sc(sel.overallStatus)}">${sel.overallStatus==='red'?'Red':sel.overallStatus==='yellow'?'Yellow':'Green'}</span></div></div>`:''}
+</div></div>`:'<div class="card" style="border-color:#fde8e8"><div style="padding:14px;text-align:center;color:#e74c3c;font-size:12px">⛔ You do not have permission to view account overview details</div></div>'}
 <div class="card"><div class="sh sh-am">AM Connect <span style="font-size:11px;font-weight:500;margin-left:3px">(you fill this)</span></div>
 ${exAM?`<div class="banner banner-blue">Last saved on ${exAM.updatedAt}. Saving again updates for everyone.</div>`:`<div class="banner banner-green">No AM Connect entry yet for this account.</div>`}
 <div style="margin-bottom:12px"><label class="fl" style="margin-bottom:7px">Connect Stage</label>
@@ -471,15 +515,16 @@ ${exAM?`<div class="banner banner-blue">Last saved on ${exAM.updatedAt}. Saving 
 <button class="abtn abtn-blue" onclick="saveAMUpdate('${sel.id}','${exAM?.id||''}')">Save AM Connect</button>
 <button class="abtn-sm btn-ghost" style="padding:6px 12px;font-size:12px" onclick="SEL_ACC=null;R()">Cancel</button>
 </div></div>
-<div class="card"><div class="sh sh-tr">Trials <span style="font-size:11px;font-weight:500;margin-left:3px">(admin fills — you can view)</span></div>
+${canPartner('viewTrials')?`${canPartner('viewTrials')?`<div class="card"><div class="sh sh-tr">Trials <span style="font-size:11px;font-weight:500;margin-left:3px">(admin fills — you can view)</span></div>
 <div class="fg3">
 <div class="fg"><label class="fl">Trial Stage</label><div class="ro-box">${sel.trials.stage||'—'}</div></div>
 <div class="fg"><label class="fl">Trial Status</label><div class="ro-box">${sel.trials.status?`<span class="pill ${sc(sel.trials.status)}">${sel.trials.status==='red'?'Red':sel.trials.status==='yellow'?'Yellow':'Green'}</span>`:'—'}</div></div>
 <div class="fg"><label class="fl">Trial Connect Date</label><div class="ro-box">${fmtD(sel.trials.connectDate)}</div></div>
 <div class="fg"><label class="fl">Trial Overdue</label><div class="od-disp">${odD(sel.trials.connectDate)>0?`+${odD(sel.trials.connectDate)} days overdue`:'On track'}</div></div>
-<div class="fg"><label class="fl">Agri Manager</label><div class="ro-box">${sel.trials.agriManager||'—'}</div></div>
-<div class="fg"><label class="fl">Remarks</label><div class="ro-box" style="min-height:55px">${sel.trials.remarks||'—'}</div></div>
-</div></div>`}`;}
+${canPartner('viewTrialRemarks')?`<div class="fg"><label class="fl">Agri Manager</label><div class="ro-box">${sel.trials.agriManager||'—'}</div></div>
+<div class="fg"><label class="fl">Remarks</label><div class="ro-box" style="min-height:55px">${sel.trials.remarks||'—'}</div></div>`:''}
+</div></div>`:''}`:'<div class="card" style="border-color:#fde8e8"><div style="text-align:center;padding:20px;color:#e74c3c;font-size:12px">⛔ No permission to view Trials section</div></div>'}
+`}`;}
 
 function pgAccEntry(){
   if(!isA())return'<div style="text-align:center;padding:40px;color:var(--muted)">Access denied</div>';
@@ -648,17 +693,25 @@ function pgAdmin(){
       <div class="ctitle" style="margin-bottom:0">Partner Accounts (${pts.length})</div>
       <button class="nfbtn" onclick="openM('add-partner')">+ Add Partner</button>
     </div>
-    <table><thead><tr><th>Name</th><th>Email</th><th>Accounts</th><th>Actions</th></tr></thead>
-    <tbody>${pts.map(p=>{const cnt=DB.accounts.filter(a=>a.assignedPartnerId===p.id).length;return`<tr>
-      <td><div style="display:flex;align-items:center;gap:6px"><div class="av avp" style="width:26px;height:26px;font-size:10px">${p.name.split(' ').map(w=>w[0]).join('').slice(0,2)}</div><strong>${p.name}</strong></div></td>
-      <td style="color:var(--muted);font-size:11px">${p.email}</td>
-      <td style="font-size:11px;color:#4a7ec7;font-weight:600">${cnt}</td>
-      <td><div style="display:flex;gap:4px">
-        <button class="abtn-sm btn-ghost" onclick="openM('edit-partner','${p.id}')">Edit</button>
-        <button class="abtn-sm btn-yel" onclick="openM('reset-pw','${p.id}')">Reset PW</button>
-        <button class="abtn-sm btn-red" onclick="delPart('${p.id}')">Remove</button>
-      </div></td>
-    </tr>`;}).join('')}</tbody></table>
+    <table><thead><tr><th>Name</th><th>Email</th><th>Accounts</th><th>Permissions</th><th>Actions</th></tr></thead>
+    <tbody>${pts.map(p=>{
+      const cnt=DB.accounts.filter(a=>a.assignedPartnerId===p.id).length;
+      const pperms=p.partner_permissions||{};
+      const ppCount=Object.values(pperms).filter(v=>v!==false).length;
+      const ppTotal=Object.keys(PARTNER_PERM_LABELS).length;
+      return`<tr>
+        <td><div style="display:flex;align-items:center;gap:6px"><div class="av avp" style="width:26px;height:26px;font-size:10px">${p.name.split(' ').map(w=>w[0]).join('').slice(0,2)}</div><strong>${p.name}</strong></div></td>
+        <td style="color:var(--muted);font-size:11px">${p.email}</td>
+        <td style="font-size:11px;color:#4a7ec7;font-weight:600">${cnt}</td>
+        <td><span style="background:#eafaf1;color:#1e8449;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">${ppCount}/${ppTotal} access</span></td>
+        <td><div style="display:flex;gap:4px">
+          <button class="abtn-sm btn-ghost" onclick="openM('edit-partner','${p.id}')">Edit</button>
+          <button class="abtn-sm" style="background:#1e8449;color:#fff" onclick="openM('partner-perms','${p.id}')">Access</button>
+          <button class="abtn-sm btn-yel" onclick="openM('reset-pw','${p.id}')">Reset PW</button>
+          <button class="abtn-sm btn-red" onclick="delPart('${p.id}')">Remove</button>
+        </div></td>
+      </tr>`;}).join('')}
+    </tbody></table>
   </div>`:'<div class="card" style="margin-bottom:12px;border-color:#fde8e8"><div style="padding:16px;text-align:center;color:#e74c3c;font-size:12px">⛔ You do not have permission to manage partners</div></div>';
 
   // PENDING SIGNUPS
@@ -748,6 +801,36 @@ function mH(){
   }
   else if(type==='add-stage'||type==='edit-stage'){const s=id?DB.stages.find(x=>x.id===id):null;c=`<div class="mt">${id?'Edit Stage':'Add Stage'}</div>${mfi('Stage Name *','mn',s?.name||'')}<div class="ma"><button class="abtn-sm btn-ghost" onclick="closeM()">Cancel</button><button class="abtn abtn-blue" style="padding:6px 16px" onclick="saveStg('${id||''}')">Save</button></div>`;}
   else if(type==='reset-pw'){const u=DB.users.find(x=>x.id===id);c=`<div class="mt">Reset Password — ${u?.name||''}</div><div class="infob">Set a temporary password.</div>${mfi('New Password *','mnp','','password')}${mfi('Confirm *','mcp','','password')}<div class="ma"><button class="abtn-sm btn-ghost" onclick="closeM()">Cancel</button><button class="abtn-sm btn-yel" style="padding:4px 12px" onclick="adminRP('${id}')">Reset</button></div>`;}
+  else if(type==='partner-perms'){
+    const p=id?DB.users.find(x=>x.id===id):null;
+    if(!p){c='<div class="mt">User not found</div>';}else{
+    const pperms=p.partner_permissions||{...DEFAULT_PARTNER_PERMS};
+    // Group permissions by section
+    const groups=['Navigation','Account Overview','AM Connect','Trials'];
+    const groupColors={'Navigation':'#4a7ec7','Account Overview':'#1a5276','AM Connect':'#0a3d6b','Trials':'#145a32'};
+    const groupBg={'Navigation':'#e8f0fb','Account Overview':'#e8f0fb','AM Connect':'#bdd7f5','Trials':'#d4f5e2'};
+    c=`<div class="mt" style="color:#1e8449">🔑 Partner Access — ${p.name}</div>
+    <div class="infob">Control exactly what this partner can see and do. Default is all enabled.</div>
+    <div style="display:flex;gap:7px;margin-bottom:12px">
+      <button class="abtn-sm" style="background:#1e8449;color:#fff;padding:4px 10px" onclick="Object.keys(PARTNER_PERM_LABELS).forEach(k=>{const el=document.getElementById('pperm-'+k);if(el)el.checked=true})">Grant All</button>
+      <button class="abtn-sm btn-ghost" style="padding:4px 10px" onclick="Object.keys(PARTNER_PERM_LABELS).forEach(k=>{const el=document.getElementById('pperm-'+k);if(el)el.checked=false})">Revoke All</button>
+    </div>
+    ${groups.map(grp=>{
+      const grpPerms=Object.entries(PARTNER_PERM_LABELS).filter(([k,v])=>v.group===grp);
+      return`<div style="margin-bottom:14px">
+        <div style="background:${groupBg[grp]};color:${groupColors[grp]};padding:5px 10px;border-radius:6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">${grp}</div>
+        ${grpPerms.map(([key,info])=>`
+        <label style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border:1px solid ${pperms[key]!==false?'#a9dfbf':'var(--border)'};border-radius:8px;cursor:pointer;background:${pperms[key]!==false?'#eafaf1':'#fff'};margin-bottom:6px">
+          <div>
+            <div style="font-size:12px;font-weight:600;color:#1a1a2e">${info.label}</div>
+            <div style="font-size:10px;color:var(--muted)">${info.desc}</div>
+          </div>
+          <input type="checkbox" id="pperm-${key}" ${pperms[key]!==false?'checked':''} style="width:18px;height:18px;accent-color:#1e8449;cursor:pointer;flex-shrink:0;margin-left:10px">
+        </label>`).join('')}
+      </div>`;
+    }).join('')}
+    <div class="ma"><button class="abtn-sm btn-ghost" onclick="closeM()">Cancel</button><button class="abtn" style="background:#1e8449;color:#fff;padding:6px 16px" onclick="savePartnerPerms('${id}')">Save Access</button></div>`;}
+  }
   else if(type==='schedule-meeting'){c=`<div class="mt">Schedule Meeting</div><div class="fg2"><div class="fg"><label class="fl">Account</label><select id="sm-co"><option value="">Select...</option>${DB.accounts.map(a=>`<option value="${a.id}">${a.companyName}</option>`).join('')}</select></div><div class="fg"><label class="fl">Meeting Date</label><input type="date" id="sm-date"></div><div class="fg"><label class="fl">Connect Type</label><select id="sm-type">${(DB.dd.connectStage||[]).map(o=>`<option>${o}</option>`).join('')}</select></div><div class="fg"><label class="fl">Partner</label><select id="sm-pa">${DB.users.filter(u=>u.role==='partner').map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select></div></div><div class="fg"><label class="fl">Notes</label><textarea id="sm-notes"></textarea></div><div class="ma"><button class="abtn-sm btn-ghost" onclick="closeM()">Cancel</button><button class="abtn abtn-orange" style="padding:6px 16px" onclick="closeM();sal('Meeting scheduled!','as')">Schedule</button></div>`;}
   return`<div class="mo" onclick="if(event.target===this)closeM()"><div class="mc">${c}</div></div>`;}
 
@@ -791,8 +874,25 @@ async function rejectP(id){const p=DB.pendingSignups.find(x=>x.id===id);await SB
 async function adminRP(id){const np=document.getElementById('mnp')?.value||'',cp=document.getElementById('mcp')?.value||'';if(np.length<8)return sal('Min 8 chars','ae');if(np!==cp)return sal('Passwords do not match','ae');await SB.from('pt_users').update({password:np}).eq('id',id);closeM();sal('Password reset!','as');}
 async function saveProf(){const n=(document.getElementById('men')?.value||'').trim(),e=(document.getElementById('mee')?.value||'').trim();if(!n||!e)return sal('Fields required','ae');if(DB.users.find(u=>u.email===e&&u.id!==CU.id))return sal('Email in use','ae');await SB.from('pt_users').update({name:n,email:e}).eq('id',CU.id);CU.name=n;CU.email=e;sal('Profile updated!','as');}
 async function changePw(){const cur=document.getElementById('mec')?.value||'',np=document.getElementById('men2')?.value||'',cp=document.getElementById('mecf')?.value||'';if(cur!==CU.password)return sal('Current password incorrect','ae');if(np.length<8)return sal('Min 8 chars','ae');if(np!==cp)return sal('Passwords do not match','ae');await SB.from('pt_users').update({password:np}).eq('id',CU.id);CU.password=np;sal('Password updated!','as');}
-async function savePart(id){const n=(document.getElementById('mn')?.value||'').trim(),e=(document.getElementById('me')?.value||'').trim(),p=id?null:document.getElementById('mp')?.value||'';if(!n||!e||(!id&&!p))return sal('Fields required','ae');if(!id&&p.length<8)return sal('Min 8 chars','ae');if(id){await SB.from('pt_users').update({name:n,email:e}).eq('id',id);}else{if(DB.users.find(u=>u.email===e))return sal('Email in use','ae');await SB.from('pt_users').insert([{id:uid(),name:n,email:e,password:p,role:'partner',status:'active'}]);}closeM();sal('Partner saved!','as');}
+async function savePart(id){const n=(document.getElementById('mn')?.value||'').trim(),e=(document.getElementById('me')?.value||'').trim(),p=id?null:document.getElementById('mp')?.value||'';if(!n||!e||(!id&&!p))return sal('Fields required','ae');if(!id&&p.length<8)return sal('Min 8 chars','ae');if(id){await SB.from('pt_users').update({name:n,email:e}).eq('id',id);}else{if(DB.users.find(u=>u.email===e))return sal('Email in use','ae');await SB.from('pt_users').insert([{id:uid(),name:n,email:e,password:p,role:'partner',status:'active',partner_permissions:{...DEFAULT_PARTNER_PERMS}}]);}closeM();sal('Partner saved!','as');}
 async function delPart(id){if(id===CU.id)return sal("Can't remove yourself",'ae');await SB.from('pt_users').delete().eq('id',id);sal('Partner removed','as');}
+async function savePartnerPerms(id){
+  const pperms={};
+  Object.keys(PARTNER_PERM_LABELS).forEach(key=>{
+    const el=document.getElementById('pperm-'+key);
+    pperms[key]=el?el.checked:true;
+  });
+  const{error}=await SB.from('pt_users').update({partner_permissions:pperms}).eq('id',id);
+  if(error)return sal('Error saving access: '+error.message,'ae');
+  const u=DB.users.find(x=>x.id===id);
+  if(u)u.partner_permissions=pperms;
+  if(CU.id===id){CU.partner_permissions=pperms;}
+  // Reload users so UI reflects immediately
+  const{data}=await SB.from('pt_users').select('*');
+  if(data)DB.users=data;
+  closeM();sal('Partner access updated — changes take effect on their next login!','as',5000);
+}
+
 async function savePerms(id){
   const perms={};
   Object.keys(PERM_LABELS).forEach(key=>{
