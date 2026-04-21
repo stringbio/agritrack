@@ -1327,47 +1327,6 @@ function pgAdminProgress(){
     +'<tbody>'+compHtml+'</tbody></table></div></div>';
 }
 
-function dlProgressCSV(){
-  // Now generates formatted Excel with same style as other reports
-  const all=enAccs();
-  const stages={'Initial connect':33,'Trials connect':66,'Business connect':100};
-  
-  const headers=buildReportHeader('Progress Report — Company-wise & Alliance Manager-based');
-  headers[7][1]=all.length;
-  
-  const colHdrs=['Company','Group','Alliance Manager','Connect Stage','Progress %','Overall Status','AM Overdue Days','Initial Date','Trials Date','Business Date','Connect Date (DM)','Next Connect Date (DM)','Action Item'];
-  const rows=all.map(a=>[
-    a.companyName,
-    a.accountGroup||'',
-    a.partnerName,
-    a.am&&a.am.connectStage?a.am.connectStage:'Not started',
-    (stages[a.am&&a.am.connectStage]||0)+'%',
-    a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green',
-    a.amOD||0,
-    a.am&&a.am.initialDate?a.am.initialDate:'',
-    a.am&&a.am.trialsDate?a.am.trialsDate:'',
-    a.am&&a.am.businessDate?a.am.businessDate:'',
-    a.am&&a.am.connectDateDM?a.am.connectDateDM:'',
-    a.am&&a.am.nextConnectDateDM?a.am.nextConnectDateDM:'',
-    a.am&&a.am.actionItem?a.am.actionItem:''
-  ]);
-  
-  const data=[...headers,[],colHdrs,...rows];
-  const ws=XLSX.utils.aoa_to_sheet(data);
-  applyHeaderStyles(ws,headers.length,headers.length+1);
-  setColumnWidths(ws,[22,18,20,20,12,14,14,14,14,14,14,16,28]);
-  
-  ws['!rows']=[];
-  ws['!rows'][0]={hpt:32};
-  ws['!rows'][1]={hpt:20};
-  ws['!rows'][2]={hpt:24};
-  ws['!rows'][headers.length+1]={hpt:28};
-  
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'Progress Report');
-  XLSX.writeFile(wb,'StringBio_AgriTrack_ProgressReport_'+today()+'.xlsx');
-  sal('Progress report downloaded!','as');
-}
 
 
 function pgMyAcc(){return`<div class="g2">
