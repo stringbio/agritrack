@@ -194,7 +194,7 @@ const SEED_AM=[
 ];
 
 /* ─────────────────────────── APP STATE ─────────────────────────── */
-let DB={users:[],accounts:[],amUpdates:[],stages:[],dd:{},pendingSignups:[],auditLog:[]};
+let DB={users:[],accounts:[],amUpdates:[],stageData:[],stages:[],dd:{},pendingSignups:[],auditLog:[]};
 let CU=null, PAGE='dashboard', MODAL=null, AL=null,
     FILTERS={status:'',partner:'',stage:''}, SF={red:false,yellow:false,green:false},
     ATAB='login', RS=1, REMAIL='', SEARCH='', ASGN='', PIDX=0, PSZ=8, RPTP={},
@@ -204,6 +204,9 @@ let SEL_CS_AM    = '';
 let SEL_CS_ADMIN = '';
 let charts={}, BOOT=true;
 
+/* ─────────────────────────── CONSTANTS ─────────────────────────── */
+const AM_STAGES=['Prospect','Qualified','Trial Stage','Pre-commercial / Negotiation','Commercial','PO'];
+
 /* ─────────────────────────── HELPERS ─────────────────────────── */
 const uid=()=>'_'+Math.random().toString(36).substr(2,9);
 const displayRole=r=>r==='partner'?'Alliance Manager':r==='superadmin'?'Super Admin':r==='admin'?'Admin':r;
@@ -211,6 +214,14 @@ const today=()=>new Date().toISOString().split('T')[0];
 const nowTs=()=>new Date().toLocaleString('en-IN');
 const fmtD=d=>d?new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—';
 function odD(d){if(!d)return 0;const diff=new Date(today())-new Date(d);return diff>0?Math.floor(diff/86400000):0;}
+/* Smart display name — skips honorifics so "Dr. Gururaj" → "Gururaj" not "Dr." */
+function getDisplayName(fullName,maxLen=14){
+  const honorifics=['dr.','mr.','mrs.','ms.','prof.','sr.','jr.','dr'];
+  const parts=(fullName||'').split(' ');
+  const filtered=parts.filter(w=>!honorifics.includes(w.toLowerCase().replace('.','').replace('.','')));
+  const name=(filtered.length?filtered:parts).join(' ');
+  return name.length>maxLen?name.slice(0,maxLen-1)+'…':name;
+}
 function gu(id){return DB.users.find(u=>u.id===id)||{name:'—'};}
 function gs(id){return DB.stages.find(s=>s.id===id)||{name:'—'};}
 function getAM(aid){return DB.amUpdates.find(a=>a.account_id===aid)||null;}
@@ -276,10 +287,11 @@ function mapAcc(r){
     crop:r.crop||'', stageId:r.stage_id||'', overallStatus:r.overall_status||'yellow',
     assignedPartnerId:r.assigned_partner_id||'',
     adminActionItem:r.admin_action_item||'',
-    trials:{
-      stage:r.trial_stage||'', status:r.trial_status||'yellow',
-      connectDate:r.trial_connect_date||'', agriManager:r.agri_manager||'', remarks:r.remarks||''
-    },
+    // FY & Potential fields (admin-editable)
+    fy2627AB:parseFloat(r.fy_26_27_ab_acres)||0,
+    fy2627FF:parseFloat(r.fy_26_27_ff_acres)||0,
+    estimatedPeakPotential:parseFloat(r.estimated_peak_potential)||0,
+    accountImportance:r.account_importance||'',
     createdAt:r.created_at?r.created_at.split('T')[0]:today(),
     updatedAt:r.updated_at?r.updated_at.split('T')[0]:today()
   };
@@ -301,10 +313,19 @@ function mapAM(r){
     updatedAt:r.updated_at?r.updated_at.split('T')[0]:today()
   };
 }
+function mapStageData(r){
+  return{
+    id:r.id, accountId:r.account_id, stage:r.stage,
+    connectDate:r.connect_date||'',
+    nextConnectDate:r.next_connect_date||'',
+    actionItems:r.action_items||[{text:'',permanent:true}],
+    updatedAt:r.updated_at?r.updated_at.split('T')[0]:today()
+  };
+}
 
 /* ─────────────────────────── DB LOAD / SEED ─────────────────────────── */
 async function sbLoad(){
-  const[uR,aR,amR,stR,ddR,pR,auR]=await Promise.all([
+  const[uR,aR,amR,stR,ddR,pR,auR,sdR]=await Promise.all([
     SB.from('pt_users').select('*'),
     SB.from('pt_accounts').select('*').order('created_at',{ascending:true}),
     SB.from('pt_am_updates').select('*'),
@@ -312,6 +333,7 @@ async function sbLoad(){
     SB.from('pt_settings').select('*').eq('key','ddOptions').single(),
     SB.from('pt_pending_signups').select('*'),
     SB.from('pt_audit_log').select('*').order('created_at',{ascending:false}).limit(200),
+    SB.from('pt_stage_data').select('*'),
   ]);
   if(uR.data)DB.users=uR.data;
   if(aR.data)DB.accounts=aR.data.map(mapAcc);
@@ -320,7 +342,12 @@ async function sbLoad(){
   if(ddR.data&&ddR.data.value)DB.dd=ddR.data.value;
   if(pR.data)DB.pendingSignups=pR.data;
   if(auR.data)DB.auditLog=auR.data.map(r=>({ts:new Date(r.created_at).toLocaleString('en-IN'),user:r.user_name,role:r.user_role,action:r.action,record:r.record_name,field:r.field_name,oldv:r.old_value||'',newv:r.new_value||''}));
+  if(sdR.data)DB.stageData=sdR.data.map(mapStageData);
 }
+/* Get all stage data for an account */
+function getSD(accountId){return DB.stageData.filter(s=>s.accountId===accountId);}
+/* Get stage data for a specific account+stage */
+function getSDStage(accountId,stage){return DB.stageData.find(s=>s.accountId===accountId&&s.stage===stage)||null;}
 async function sbSeed(){
   await SB.from('pt_users').upsert(SEED_USERS);
   await SB.from('pt_stages').upsert(SEED_STAGES);
@@ -344,6 +371,7 @@ async function bootDB(){
     .on('postgres_changes',{event:'*',schema:'public',table:'pt_settings'},async()=>{const{data}=await SB.from('pt_settings').select('*').eq('key','ddOptions').single();if(data&&data.value){DB.dd=data.value;R();}})
     .on('postgres_changes',{event:'*',schema:'public',table:'pt_pending_signups'},async()=>{const{data}=await SB.from('pt_pending_signups').select('*');if(data){DB.pendingSignups=data;R();}})
     .on('postgres_changes',{event:'*',schema:'public',table:'pt_audit_log'},async()=>{const{data}=await SB.from('pt_audit_log').select('*').order('created_at',{ascending:false}).limit(200);if(data){DB.auditLog=data.map(r=>({ts:new Date(r.created_at).toLocaleString('en-IN'),user:r.user_name,role:r.user_role,action:r.action,record:r.record_name,field:r.field_name,oldv:r.old_value||'',newv:r.new_value||''}));R();}})
+    .on('postgres_changes',{event:'*',schema:'public',table:'pt_stage_data'},async()=>{const{data}=await SB.from('pt_stage_data').select('*');if(data){DB.stageData=data.map(mapStageData);R();}})
     .subscribe();
 }
 async function sbLog(action,record,field,oldv,newv,extra={}){
@@ -381,7 +409,7 @@ ${fi('Full Name *','sn')}${fi('Work Email *','se','','email')}${fi('Password *',
 function rstH(){
   let body='';
   if(RS===1)body=`${fi('Registered email','re',REMAIL,'email')}<button class="abtn abtn-blue" style="width:100%;padding:9px" onclick="rs1()">Send Reset Code</button>`;
-  else if(RS===2)body=`<div class="infob">Your reset code (simulating email to <strong>${REMAIL}</strong>):</div><div class="rtok">${DB._rtok||'------'}</div>${fi('Enter code','rt')}<button class="abtn abtn-blue" style="width:100%;padding:9px" onclick="rs2()">Verify</button>`;
+  else if(RS===2)body=`<div class="infob">A reset code has been generated for <strong>${REMAIL}</strong>.<br><span style="font-size:10px;color:var(--muted)">(In production, this would be emailed. For demo, it's shown below.)</span></div><div class="rtok">${DB._rtok||'------'}</div>${fi('Enter code above','rt')}<button class="abtn abtn-blue" style="width:100%;padding:9px" onclick="rs2()">Verify Code</button>`;
   else body=`${fi('New Password','rnp','','password')}${fi('Confirm','rcp','','password')}<button class="abtn abtn-blue" style="width:100%;padding:9px" onclick="rs3()">Set Password</button>`;
   return`<div class="abg"><div class="ac">
 <div class="alogo">${LOGO_IMG_AUTH}<h2 style="margin-top:6px">Reset Password</h2><p>Step ${RS} of 3</p></div>
@@ -405,9 +433,37 @@ async function doSignup(){
   if(error)return sal('Error: '+error.message,'ae');
   ATAB='login';sal('Request submitted! Admin will review shortly.','as',5000);
 }
-async function rs1(){const e=(document.getElementById('re')?.value||'').trim();if(!e)return sal('Enter email','ae');if(!DB.users.find(u=>u.email===e))return sal('No account found','ae');REMAIL=e;const tok=Math.floor(100000+Math.random()*900000).toString();DB._rtok=tok;await SB.from('pt_settings').upsert([{key:'reset_'+e,value:{token:tok}}]);RS=2;AL=null;R();}
-async function rs2(){const entered=(document.getElementById('rt')?.value||'').trim();if(!DB._rtok||DB._rtok!==entered)return sal('Invalid code','ae');RS=3;AL=null;R();}
-async function rs3(){const np=document.getElementById('rnp')?.value||'',cp=document.getElementById('rcp')?.value||'';if(np.length<8)return sal('Min 8 chars','ae');if(np!==cp)return sal('Passwords do not match','ae');await SB.from('pt_users').update({password:np}).eq('email',REMAIL);await SB.from('pt_settings').delete().eq('key','reset_'+REMAIL);ATAB='login';RS=1;REMAIL='';delete DB._rtok;sal('Password reset! Sign in.','as',4000);}
+async function rs1(){
+  const e=(document.getElementById('re')?.value||'').trim();
+  if(!e)return sal('Enter email','ae');
+  if(!DB.users.find(u=>u.email===e))return sal('No account found with that email','ae');
+  REMAIL=e;
+  const tok=Math.floor(100000+Math.random()*900000).toString();
+  const expiry=new Date(Date.now()+15*60*1000).toISOString();
+  DB._rtok=tok;
+  await SB.from('pt_settings').upsert([{key:'reset_'+e,value:{token:tok,expiry,used:false}}]);
+  RS=2;AL=null;R();
+}
+async function rs2(){
+  const entered=(document.getElementById('rt')?.value||'').trim();
+  const{data}=await SB.from('pt_settings').select('*').eq('key','reset_'+REMAIL).single();
+  if(!data?.value)return sal('No reset request found. Please start over.','ae');
+  if(data.value.used)return sal('This code has already been used. Please request a new one.','ae');
+  if(new Date(data.value.expiry)<new Date())return sal('Code expired (15 min limit). Please start over.','ae');
+  if(data.value.token!==entered)return sal('Invalid code — please check and try again','ae');
+  RS=3;AL=null;R();
+}
+async function rs3(){
+  const np=document.getElementById('rnp')?.value||'',cp=document.getElementById('rcp')?.value||'';
+  if(np.length<8)return sal('Min 8 chars','ae');
+  if(np!==cp)return sal('Passwords do not match','ae');
+  await SB.from('pt_users').update({password:np}).eq('email',REMAIL);
+  // Mark token as used
+  const{data}=await SB.from('pt_settings').select('*').eq('key','reset_'+REMAIL).single();
+  if(data)await SB.from('pt_settings').update({value:{...data.value,used:true}}).eq('key','reset_'+REMAIL);
+  ATAB='login';RS=1;REMAIL='';delete DB._rtok;
+  sal('Password reset successfully! Sign in with your new password.','as',4000);
+}
 async function doLogout(){CU=null;AL=null;ATAB='login';localStorage.removeItem('pt_session');R();}
 
 /* ─────────────────────────── APP SHELL ─────────────────────────── */
@@ -417,9 +473,7 @@ function appH(){
     tabs=[{id:'dashboard',label:'Dashboard'}];
     pgs={dashboard:pgDash()};
     if(canPartner('viewMyAccounts')){tabs.push({id:'my-accounts',label:'My Accounts'});pgs['my-accounts']=pgMyAccs();}
-    if(canPartner('updateAMConnect')){tabs.push({id:'am-update',label:'Update AM Connect'});pgs['am-update']=pgAMUpd();}
     if(canPartner('viewFollowups')){tabs.push({id:'followups',label:'Follow-Up Tracker'});pgs.followups=pgFU();}
-    tabs.push({id:'progress',label:'My Progress'});pgs.progress=pgProgress();
     tabs.push({id:'myaccount',label:'My Account'});pgs.myaccount=pgMyAcc();
   } else {
     tabs=[{id:'dashboard',label:'Dashboard'}];
@@ -428,7 +482,6 @@ function appH(){
     if(can('manageAccounts')){tabs.push({id:'account-entry',label:'Account Records'});pgs['account-entry']=pgAccEntry();}
     if(can('viewAnalytics')){tabs.push({id:'analytics',label:'Analytics'});pgs.analytics=pgAna();}
     if(can('viewReports')){tabs.push({id:'reports',label:'Reports & Audit'});pgs.reports=pgRep();}
-    if(can('viewAnalytics')){tabs.push({id:'progress-admin',label:'Progress Report'});pgs['progress-admin']=pgAdminProgress();}
     tabs.push({id:'admin',label:'Admin Panel'});pgs.admin=pgAdmin();
     tabs.push({id:'myaccount',label:'My Account'});pgs.myaccount=pgMyAcc();
   }
@@ -440,7 +493,7 @@ function appH(){
 ${MODAL?mH():''}</div>`;}
 
 /* ─────────────────────────── DATA HELPERS ─────────────────────────── */
-function enAccs(){return DB.accounts.map(a=>{const am=getAM(a.id);return{...a,am,partnerName:gu(a.assignedPartnerId).name,stageName:gs(a.stageId).name,amOD:am?odD(am.nextConnectDateDM):0,trOD:odD(a.trials.connectDate)};});}
+function enAccs(){return DB.accounts.map(a=>{const am=getAM(a.id);return{...a,am,partnerName:gu(a.assignedPartnerId).name,stageName:gs(a.stageId).name,amOD:am?odD(am.nextConnectDateDM):0};});}
 function filtAccs(){
   let r=isA()?enAccs():enAccs().filter(a=>a.assignedPartnerId===CU.id);
   if(FILTERS.status)r=r.filter(a=>a.overallStatus===FILTERS.status);
@@ -452,60 +505,71 @@ function filtAccs(){
   return r;
 }
 
-function buildStageActionItems(exAM, overrideCS){
-  const cs = overrideCS !== undefined ? overrideCS : (exAM ? exAM.connectStage : '');
-  const showInitial = !cs || cs==='Initial connect' || cs==='Trials connect' || cs==='Business connect';
-  const showTrials  = cs==='Trials connect' || cs==='Business connect';
-  const showBiz     = cs==='Business connect';
-  let html = '';
-  if(showInitial){
-    const isCur  = cs==='' || cs==='Initial connect';
-    const locked = !isCur && !EDIT_UNLOCKED.initial;
-    const val    = exAM ? (exAM.initialActionItem||'') : '';
-    const editBtn = !isCur
-      ? '<button type="button" class="btn-edit-toggle' + (EDIT_UNLOCKED.initial?' active':'') + '" onclick="toggleEditUnlock(this,0)">' + (EDIT_UNLOCKED.initial?'&#x1F513; Editing':'&#x1F512; Edit') + '</button>'
-      : '';
-    html += '<div class="stage-ai-block initial">'
-      + '<div class="stage-ai-header"><span class="stage-badge badge-initial">Initial Connect</span>' + editBtn + '</div>'
-      + (locked
-          ? '<div class="ro-locked">' + (val||'<span style="color:var(--muted);font-style:italic">No action item recorded</span>') + '</div>'
-          : '<input type="text" id="f-init-ai" value="' + val.replace(/"/g,'&quot;') + '" placeholder="Action item for Initial Connect stage…" style="background:#fff">'
-        )
-      + '</div>';
-  }
-  if(showTrials){
-    const isCur  = cs==='Trials connect';
-    const locked = !isCur && !EDIT_UNLOCKED.trials;
-    const val    = exAM ? (exAM.trialsActionItem||'') : '';
-    const editBtn = !isCur
-      ? '<button type="button" class="btn-edit-toggle' + (EDIT_UNLOCKED.trials?' active':'') + '" onclick="toggleEditUnlock(this,1)">' + (EDIT_UNLOCKED.trials?'&#x1F513; Editing':'&#x1F512; Edit') + '</button>'
-      : '';
-    html += '<div class="stage-ai-block trials">'
-      + '<div class="stage-ai-header"><span class="stage-badge badge-trials">Trials Connect</span>' + editBtn + '</div>'
-      + (locked
-          ? '<div class="ro-locked">' + (val||'<span style="color:var(--muted);font-style:italic">No action item recorded</span>') + '</div>'
-          : '<input type="text" id="f-trials-ai" value="' + val.replace(/"/g,'&quot;') + '" placeholder="Action item for Trials Connect stage…" style="background:#fff">'
-        )
-      + '</div>';
-  }
-  if(showBiz){
-    const b1 = exAM?(exAM.bizAction1||''):'';
-    const b2 = exAM?(exAM.bizAction2||''):'';
-    const b3 = exAM?(exAM.bizAction3||''):'';
-    html += '<div class="stage-ai-block biz">'
-      + '<div class="stage-ai-header"><span class="stage-badge badge-biz">Business Connect</span></div>'
-      + '<div class="fg" style="margin-bottom:6px"><label class="fl">Business Action 1</label><input type="text" id="f-biz1" value="' + b1.replace(/"/g,'&quot;') + '" placeholder="First business action…" style="background:#fff"></div>'
-      + '<div class="fg" style="margin-bottom:6px"><label class="fl">Business Action 2</label><input type="text" id="f-biz2" value="' + b2.replace(/"/g,'&quot;') + '" placeholder="Second business action…" style="background:#fff"></div>'
-      + '<div class="fg" style="margin-bottom:0"><label class="fl">Business Action 3</label><input type="text" id="f-biz3" value="' + b3.replace(/"/g,'&quot;') + '" placeholder="Third business action…" style="background:#fff"></div>'
-      + '</div>';
-  }
-  if(!html){
-    html = '<div class="stage-ai-block initial">'
-      + '<div class="stage-ai-header"><span class="stage-badge badge-initial">Initial Connect</span></div>'
-      + '<input type="text" id="f-init-ai" value="" placeholder="Action item for Initial Connect stage…" style="background:#fff">'
-      + '</div>';
-  }
+function buildStageActionItems(stageData){
+  const items=stageData?.actionItems||[{text:'',permanent:true}];
+  const canAdd=items.length<5;
+  let html='<div id="ai-container">';
+  items.forEach((item,idx)=>{
+    const isFirst=idx===0;
+    html+=`<div class="ai-row" id="ai-row-${idx}" style="display:flex;align-items:center;gap:6px;margin-bottom:7px">
+      <span style="font-size:10px;font-weight:700;color:var(--muted);min-width:16px">${idx+1}.</span>
+      <input type="text" id="ai-text-${idx}" value="${(item.text||'').replace(/"/g,'&quot;')}"
+             placeholder="${isFirst?'Action item 1 (always visible — optional to fill)':'Action item '+(idx+1)+'…'}"
+             style="flex:1;background:#fff">
+      ${!isFirst?`<button type="button" class="abtn-sm btn-red" onclick="removeAI(${idx})" style="padding:2px 8px;font-size:10px;flex-shrink:0">✕</button>`:''}
+    </div>`;
+  });
+  html+='</div>';
+  if(canAdd)html+=`<button type="button" class="abtn-sm btn-ghost" onclick="addAI()" style="margin-top:5px;font-size:11px;padding:4px 10px">+ Add Action Item (${items.length}/5)</button>`;
+  else html+=`<div style="font-size:10px;color:var(--muted);margin-top:4px">Maximum 5 action items reached</div>`;
   return html;
+}
+function addAI(){
+  const c=document.getElementById('ai-container');
+  if(!c)return;
+  const rows=c.querySelectorAll('.ai-row');
+  if(rows.length>=5)return;
+  const idx=rows.length;
+  const row=document.createElement('div');
+  row.className='ai-row';row.id='ai-row-'+idx;
+  row.style.cssText='display:flex;align-items:center;gap:6px;margin-bottom:7px';
+  row.innerHTML=`<span style="font-size:10px;font-weight:700;color:var(--muted);min-width:16px">${idx+1}.</span><input type="text" id="ai-text-${idx}" placeholder="Action item ${idx+1}…" style="flex:1;background:#fff"><button type="button" class="abtn-sm btn-red" onclick="removeAI(${idx})" style="padding:2px 8px;font-size:10px;flex-shrink:0">✕</button>`;
+  c.appendChild(row);
+  // update add button
+  const addBtn=c.nextElementSibling;
+  if(addBtn){const total=c.querySelectorAll('.ai-row').length;addBtn.textContent=total>=5?'':'+ Add Action Item ('+total+'/5)';if(total>=5)addBtn.style.display='none';}
+}
+function removeAI(idx){
+  const c=document.getElementById('ai-container');if(!c)return;
+  const row=document.getElementById('ai-row-'+idx);
+  if(row)row.remove();
+  // Re-index
+  const rows=c.querySelectorAll('.ai-row');
+  rows.forEach((r,i)=>{
+    r.id='ai-row-'+i;
+    const lbl=r.querySelector('span');if(lbl)lbl.textContent=(i+1)+'.';
+    const inp=r.querySelector('input');if(inp)inp.id='ai-text-'+i;
+    const btn=r.querySelector('button');if(btn&&i>0)btn.setAttribute('onclick','removeAI('+i+')');
+  });
+  const addBtn=c.nextElementSibling;
+  if(addBtn){const total=rows.length;addBtn.textContent='+ Add Action Item ('+total+'/5)';addBtn.style.display=total<5?'':'none';}
+}
+function collectAI(){
+  const items=[];const c=document.getElementById('ai-container');if(!c)return items;
+  c.querySelectorAll('input[type=text]').forEach((inp,i)=>items.push({text:inp.value.trim(),permanent:i===0}));
+  return items;
+}
+/* Called when user selects a stage in the AM Connect form */
+function onStageSelect(accountId){
+  const stage=document.getElementById('sel-am-stage')?.value;
+  if(!stage||!accountId)return;
+  const ex=getSDStage(accountId,stage);
+  const cdEl=document.getElementById('f-am-connect-date');
+  const ncdEl=document.getElementById('f-am-next-date');
+  if(cdEl)cdEl.value=ex?.connectDate||'';
+  if(ncdEl)ncdEl.value=ex?.nextConnectDate||'';
+  const wrapper=document.getElementById('ai-wrapper');
+  if(wrapper)wrapper.innerHTML=buildStageActionItems(ex);
 }
 
 /* ─────────────────────────── PAGES ─────────────────────────── */
@@ -546,7 +610,7 @@ ${isA()?`<button class="abtn abtn-blue" onclick="PAGE='account-entry';R()">Manag
     <div style="position:relative;height:140px"><canvas id="connectDonut"></canvas></div>
   </div>
   <div class="card" style="padding:14px"><div class="ctitle">${isA()?'Alliance Manager Progress %':'Account Status Summary'}</div>
-    ${isA()?'<div style="position:relative;height:170px"><canvas id="amLeader"></canvas></div>':function(){const myA=all.filter(a=>a.assignedPartnerId===CU.id);const stagePct2={'Initial connect':33,'Trials connect':66,'Business connect':100};if(!myA.length)return '<div style="text-align:center;padding:30px;color:var(--muted);font-size:12px">No accounts assigned</div>';return myA.map(function(a){const cs=a.am?a.am.connectStage:'';const pct=stagePct2[cs]||0;const col=pct>=100?'#3aaa5e':pct>=66?'#2ecc71':pct>=33?'#e6a817':'#e74c3c';return '<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span style="font-weight:600">'+a.companyName+'</span><span style="font-weight:700;color:'+col+'">'+pct+'%</span></div><div style="background:#f0f3f8;border-radius:6px;height:7px;overflow:hidden"><div style="background:linear-gradient(90deg,#c0392b,#e74c3c 20%,#e6a817 33%,#f0c040 50%,#2ecc71 66%,#3aaa5e 100%);height:100%;width:'+pct+'%;border-radius:6px"></div></div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+(cs||'Not started')+'</div></div>';}).join('');}()}
+    ${isA()?'<div style="position:relative;height:170px"><canvas id="amLeader"></canvas></div>':function(){const myA=all.filter(a=>a.assignedPartnerId===CU.id);if(!myA.length)return '<div style="text-align:center;padding:30px;color:var(--muted);font-size:12px">No accounts assigned</div>';return myA.map(function(a){const sd=getSD(a.id);const pct=sd.length>0?Math.round((sd.length/AM_STAGES.length)*100):0;const latestStage=sd.sort((x,y)=>new Date(y.updatedAt)-new Date(x.updatedAt))[0]?.stage||'';const col=pct>=80?'#3aaa5e':pct>=50?'#4a7ec7':pct>=25?'#e6a817':'#e74c3c';return '<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span style="font-weight:600">'+a.companyName+'</span><span style="font-weight:700;color:'+col+'">'+pct+'%</span></div><div style="background:#f0f3f8;border-radius:6px;height:7px;overflow:hidden"><div style="background:linear-gradient(90deg,#c0392b,#e74c3c 20%,#e6a817 33%,#f0c040 50%,#2ecc71 66%,#3aaa5e 100%);height:100%;width:'+pct+'%;border-radius:6px"></div></div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+(latestStage||'Not started')+' &middot; '+sd.length+'/'+AM_STAGES.length+' stages</div></div>';}).join('');}()}
   </div>
 </div>`;}
 
@@ -554,89 +618,21 @@ function pgMyAccs(){
   if(!canPartner('viewMyAccounts'))return'<div class="card"><div style="text-align:center;padding:40px;color:#e74c3c">&#x26D4; No permission to view accounts.</div></div>';
   const myAccs=enAccs().filter(a=>a.assignedPartnerId===CU.id);
   return`<div style="font-size:17px;font-weight:700;margin-bottom:3px">My Assigned Accounts</div>
-<div style="font-size:12px;color:var(--muted);margin-bottom:16px">Click any account to update your AM Connect progress.</div>
-${!myAccs.length?`<div class="card"><div style="text-align:center;padding:28px;color:var(--muted)">No accounts assigned yet.</div></div>`:myAccs.map(a=>`<div class="acc-card" onclick="SEL_ACC='${a.id}';EDIT_UNLOCKED={initial:false,trials:false};SEL_CS_AM='';PAGE='am-update';R()">
+<div style="font-size:12px;color:var(--muted);margin-bottom:16px">Click any account to update your AM Connect in <strong>My Account</strong>.</div>
+${!myAccs.length?`<div class="card"><div style="text-align:center;padding:28px;color:var(--muted)">No accounts assigned yet.</div></div>`:myAccs.map(a=>`<div class="acc-card" onclick="SEL_ACC='${a.id}';PAGE='myaccount';R()">
 <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:9px"><div><div style="font-size:13px;font-weight:700">${a.companyName}</div><div style="font-size:11px;color:var(--muted);margin-top:2px">${a.accountGroup} &middot; ${a.stageName}</div></div>
 <div style="display:flex;gap:5px;align-items:center"><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green'}</span>${a.amOD>0?`<span class="oday">+${a.amOD}d OD</span>`:''}</div></div>
 <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:7px;font-size:11px">
 <div><div style="color:var(--muted)">Focus Area</div><strong>${a.focusArea||'—'}</strong></div>
 <div><div style="color:var(--muted)">Priority</div><strong>${a.accountPriority||'—'}</strong></div>
 <div><div style="color:var(--muted)">Crop</div><strong>${a.crop||'—'}</strong></div>
-<div><div style="color:var(--muted)">Connect Stage</div><strong>${a.am?.connectStage||'<span style="color:var(--muted)">Not set</span>'}</strong></div></div>
+<div><div style="color:var(--muted)">Stages</div><strong>${getSD(a.id).length} updated</strong></div></div>
 ${a.adminActionItem&&canPartner('viewAdminActionItem')?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid #f0f3f8"><div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">Action Item</div><div style="font-size:12px;color:#2d3748">${a.adminActionItem}</div></div>`:''}
 </div>`).join('')}`;}
 
-function pgAMUpd(){
-  if(!canPartner('updateAMConnect'))return'<div class="card"><div style="text-align:center;padding:40px;color:#e74c3c">&#x26D4; No permission to update AM Connect.</div></div>';
-  const myAccs=enAccs().filter(a=>a.assignedPartnerId===CU.id);
+/* pgAMUpd removed — functionality merged into My Account (pgMyAcc) */
+function pgAMUpd(){PAGE='myaccount';R();return '';}
   const sel=SEL_ACC?DB.accounts.find(a=>a.id===SEL_ACC):null;
-  const eSel=sel?enAccs().find(a=>a.id===SEL_ACC):null;
-  const exAM=sel?getAM(sel.id):null;
-  const csOpts=(DB.dd.connectStage)||['Initial connect','Trials connect','Business connect'];
-  if(sel && SEL_CS_AM==='' && exAM?.connectStage) SEL_CS_AM=exAM.connectStage;
-  const curCS=SEL_CS_AM;
-  return`<div style="font-size:17px;font-weight:700;margin-bottom:3px">Update AM Connect</div>
-<div style="font-size:12px;color:var(--muted);margin-bottom:16px">Select an account and fill in your AM Connect progress.</div>
-<div class="card"><div class="divlbl">Select Account</div>
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:9px">
-${myAccs.map(a=>`<div onclick="SEL_ACC='${a.id}';EDIT_UNLOCKED={initial:false,trials:false};SEL_CS_AM='';R()" style="padding:9px 11px;border:2px solid ${SEL_ACC===a.id?'#4a7ec7':'var(--border)'};border-radius:8px;cursor:pointer;background:${SEL_ACC===a.id?'#f0f7ff':'#fff'}"><div style="font-size:12px;font-weight:700">${a.companyName}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${a.accountGroup} &middot; <span class="pill ${sc(a.overallStatus)}" style="font-size:10px;padding:1px 5px">${a.overallStatus}</span></div></div>`).join('')}
-</div></div>
-${!sel?`<div class="card"><div style="text-align:center;padding:18px;color:var(--muted)">Select an account above to update AM Connect</div></div>`:`
-${canPartner('viewAccountOverview')?`<div class="card">
-<div class="sh sh-ov">Account Overview <span style="font-size:11px;font-weight:500;margin-left:3px">(set by admin — read only)</span></div>
-<div class="fg4">
-<div class="fg"><label class="fl">Account Name</label><div class="ro-box">${sel.companyName}</div></div>
-<div class="fg"><label class="fl">Account Group</label><div class="ro-box">${sel.accountGroup||'—'}</div></div>
-<div class="fg"><label class="fl">Focus Area</label><div class="ro-box">${sel.focusArea||'—'}</div></div>
-<div class="fg"><label class="fl">Program Manager</label><div class="ro-box">${sel.programManager||'—'}</div></div>
-${canPartner('viewAccountPriority')?`<div class="fg"><label class="fl">Company Type</label><div class="ro-box">${sel.companyType||'—'}</div></div>
-<div class="fg"><label class="fl">Account Priority</label><div class="ro-box">${sel.accountPriority||'—'}</div></div>
-<div class="fg"><label class="fl">Opportunity Category</label><div class="ro-box">${sel.opportunityCategory||'—'}</div></div>`:''}
-${canPartner('viewCrop')?`<div class="fg"><label class="fl">Crop</label><div class="ro-box">${sel.crop||'—'}</div></div>`:''}
-${canPartner('viewAccountStage')?`<div class="fg"><label class="fl">Stage</label><div class="ro-box">${eSel?.stageName||'—'}</div></div>
-<div class="fg"><label class="fl">Overall Status</label><div class="ro-box"><span class="pill ${sc(sel.overallStatus)}">${sel.overallStatus==='red'?'Red':sel.overallStatus==='yellow'?'Yellow':'Green'}</span></div></div>`:''}
-</div>
-${canPartner('viewAdminActionItem')&&sel.adminActionItem?`
-<div class="fg full" style="margin-top:4px">
-  <label class="fl">Action Item</label>
-  <div class="ro-box">${sel.adminActionItem}</div>
-</div>`:''}
-</div>`:'<div class="card" style="border-color:#fde8e8"><div style="padding:14px;text-align:center;color:#e74c3c;font-size:12px">&#x26D4; No permission to view account overview</div></div>'}
-<div class="card">
-<div class="sh sh-am">AM Connect <span style="font-size:11px;font-weight:500;margin-left:3px">(Alliance Manager fills this)</span></div>
-${exAM?`<div class="banner banner-blue">Last saved on ${exAM.updatedAt}. Saving again updates for everyone.</div>`:`<div class="banner banner-green">No AM Connect entry yet for this account.</div>`}
-<div style="margin-bottom:12px">
-  <label class="fl" style="margin-bottom:7px">Connect Stage</label>
-  <div id="am-stage-pills" style="display:flex;gap:7px;flex-wrap:wrap">
-    ${csOpts.map(s=>`<button type="button" class="csp${curCS===s?' sel':''}" data-stage="${s}" onclick="selCSAM(this,'${s}')">${s}</button>`).join('')}
-  </div>
-</div>
-<div class="fg2">
-  <div class="fg"><label class="fl">Date of Connect — Decision Maker</label><input type="date" id="f-acd" value="${exAM?.connectDateDM||''}" max="${today()}"></div>
-  <div class="fg"><label class="fl">Next Date of Connect — Decision Maker</label><input type="date" id="f-ncd" value="${exAM?.nextConnectDateDM||''}" oninput="calcOD(this.value)"></div>
-</div>
-<div class="fg"><label class="fl">Connect Overdue (days)</label>
-<div class="od-disp" id="od-disp">${exAM?.nextConnectDateDM?(odD(exAM.nextConnectDateDM)>0?`+${odD(exAM.nextConnectDateDM)} days overdue`:'On track — not overdue'):'Enter next connect date to calculate'}</div></div>
-<div style="margin-top:14px;padding-top:12px;border-top:1px solid #f0f3f8">
-  <div class="divlbl">Stage Action Items <span style="font-weight:400;color:var(--muted);font-size:10px">&mdash; previous stages shown read-only (&#x1F512; Edit to unlock)</span></div>
-  <div id="am-action-items-box">${buildStageActionItems(exAM, curCS)}</div>
-</div>
-<div style="display:flex;gap:9px;margin-top:14px">
-  <button class="abtn abtn-blue" onclick="saveAMUpdate('${sel.id}','${exAM?.id||''}')">Save AM Connect</button>
-  <button class="abtn-sm btn-ghost" style="padding:6px 12px;font-size:12px" onclick="SEL_ACC=null;EDIT_UNLOCKED={initial:false,trials:false};SEL_CS_AM='';R()">Cancel</button>
-</div></div>
-${canPartner('viewTrials')?`<div class="card"><div class="sh sh-tr">Trials <span style="font-size:11px;font-weight:500;margin-left:3px">(Trial Details)</span></div>
-<div class="fg3">
-<div class="fg"><label class="fl">Trial Stage</label><div class="ro-box">${sel.trials.stage||'—'}</div></div>
-<div class="fg"><label class="fl">Trial Status</label><div class="ro-box">${sel.trials.status?`<span class="pill ${sc(sel.trials.status)}">${sel.trials.status==='red'?'Red':sel.trials.status==='yellow'?'Yellow':sel.trials.status==='na'?'N/A':'Green'}</span>`:'—'}</div></div>
-<div class="fg"><label class="fl">Trial Connect Date</label><div class="ro-box">${fmtD(sel.trials.connectDate)}</div></div>
-<div class="fg"><label class="fl">Trial Overdue</label><div class="od-disp">${odD(sel.trials.connectDate)>0?`+${odD(sel.trials.connectDate)} days overdue`:'On track'}</div></div>
-${canPartner('viewTrialRemarks')?`<div class="fg"><label class="fl">Agri Manager</label><div class="ro-box">${sel.trials.agriManager||'—'}</div></div>
-<div class="fg"><label class="fl">Remarks</label><div class="ro-box" style="min-height:55px">${sel.trials.remarks||'—'}</div></div>`:''}
-</div></div>`:''}
-`}`;
-}
-
 function pgAccEntry(){
   if(!isA())return'<div style="text-align:center;padding:40px;color:var(--muted)">Access denied</div>';
   const dd=DB.dd;
@@ -646,8 +642,8 @@ function pgAccEntry(){
   return`<div class="g2" style="align-items:start">
 <div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
 <div style="font-size:15px;font-weight:700">Account Records (${DB.accounts.length})</div>
-<button class="nfbtn" onclick="window._aSel='';SEL_CS_ADMIN='';R()">+ New Account</button></div>
-${DB.accounts.map(a=>`<div onclick="window._aSel='${a.id}';EDIT_UNLOCKED={initial:false,trials:false};SEL_CS_ADMIN='';R()" style="padding:9px 12px;border:2px solid ${sid===a.id?'#4a7ec7':'var(--border)'};border-radius:8px;margin-bottom:7px;cursor:pointer;background:${sid===a.id?'#f0f7ff':'#fff'}">
+<button class="nfbtn" onclick="window._aSel='';R()">+ New Account</button></div>
+${DB.accounts.map(a=>`<div onclick="window._aSel='${a.id}';R()" style="padding:9px 12px;border:2px solid ${sid===a.id?'#4a7ec7':'var(--border)'};border-radius:8px;margin-bottom:7px;cursor:pointer;background:${sid===a.id?'#f0f7ff':'#fff'}">
 <div style="display:flex;justify-content:space-between;align-items:center">
 <div><div style="font-size:12px;font-weight:700">${a.companyName}</div><div style="font-size:10px;color:var(--muted);margin-top:1px">${a.accountGroup||'—'} &middot; ${gu(a.assignedPartnerId).name}</div></div>
 <span class="pill ${sc(a.overallStatus)}" style="font-size:10px">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green'}</span></div></div>`).join('')}
@@ -657,8 +653,11 @@ ${DB.accounts.map(a=>`<div onclick="window._aSel='${a.id}';EDIT_UNLOCKED={initia
 <div class="divlbl">Account Overview</div>
 <div class="fg4">
 <div class="fg full"><label class="fl">Assign to Alliance Manager *</label>
-<select id="fa-p"><option value="">-- Select Alliance Manager --</option>
-${DB.users.filter(u=>u.role==='partner').map(p=>`<option value="${p.id}"${acc?.assignedPartnerId===p.id?' selected':''}>${p.name}</option>`).join('')}</select></div>
+<select id="fa-p"${acc?` disabled title="Ownership cannot be reassigned"`:''}>
+<option value="">-- Select Alliance Manager --</option>
+${DB.users.filter(u=>u.role==='partner').map(p=>`<option value="${p.id}"${acc?.assignedPartnerId===p.id?' selected':''}>${p.name}</option>`).join('')}</select>
+${acc?`<div style="font-size:10px;color:var(--muted);margin-top:2px">&#128274; Ownership is fixed. Cannot be reassigned.</div>`:''}
+</div>
 <div class="fg"><label class="fl">Company Name *</label><input type="text" id="fa-cn" value="${acc?.companyName||''}"></div>
 <div class="fg"><label class="fl">Company Email</label><input type="email" id="fa-ce" value="${acc?.companyEmail||''}"></div>
 <div class="fg"><label class="fl">Focus Area</label>${ddS('fa-fa','focusArea',acc?.focusArea||'')}</div>
@@ -675,46 +674,44 @@ ${DB.users.filter(u=>u.role==='partner').map(p=>`<option value="${p.id}"${acc?.a
   <label class="fl">Action Item <span style="font-weight:400;color:var(--muted)">(visible to Alliance Manager)</span></label>
   <textarea id="fa-aai" placeholder="Enter a task or action for the Alliance Manager…" style="min-height:60px">${acc?.adminActionItem||''}</textarea>
 </div>
-<div class="divlbl" style="margin-top:4px">Trial Details</div>
-<div class="fg3">
-<div class="fg"><label class="fl">Trial Stage</label>${ddS('fa-ts','trialStage',acc?.trials.stage||'')}</div>
-<div class="fg"><label class="fl">Trial Status</label><select id="fa-tst"><option value="red"${acc?.trials.status==='red'?' selected':''}>Red</option><option value="yellow"${(!acc||acc.trials.status==='yellow')?' selected':''}>Yellow</option><option value="green"${acc?.trials.status==='green'?' selected':''}>Green</option><option value="na"${acc?.trials.status==='na'?' selected':''}>Not Applicable</option></select></div>
-<div class="fg"><label class="fl">Trial Connect Date</label><input type="date" id="fa-tcd" value="${acc?.trials.connectDate||''}"></div>
-<div class="fg"><label class="fl">Agri Manager</label><input type="text" id="fa-am" value="${acc?.trials.agriManager||''}"></div>
-<div class="fg full"><label class="fl">Remarks</label><textarea id="fa-rm">${acc?.trials.remarks||''}</textarea></div>
+<div class="divlbl" style="margin-top:8px">FY 26–27 Metrics <span style="font-weight:400;text-transform:none;font-size:10px;color:var(--muted)">(Admin editable — read-only for Alliance Managers)</span></div>
+<div class="fg4">
+<div class="fg"><label class="fl">FY 26–27 AB (Acres)</label><input type="number" id="fa-ab" step="0.01" min="0" value="${acc?.fy2627AB||''}"></div>
+<div class="fg"><label class="fl">FY 26–27 FF (Acres)</label><input type="number" id="fa-ff" step="0.01" min="0" value="${acc?.fy2627FF||''}"></div>
+<div class="fg"><label class="fl">Est. Peak Potential (Acres)</label><input type="number" id="fa-ep" step="0.01" min="0" value="${acc?.estimatedPeakPotential||''}"></div>
+<div class="fg"><label class="fl">Account Importance</label><input type="text" id="fa-ai" placeholder="e.g. High, Strategic…" value="${acc?.accountImportance||''}"></div>
 </div>
-<div style="display:flex;gap:9px;margin-top:4px;align-items:center">
+<div style="display:flex;gap:9px;margin-top:10px;align-items:center">
 <button class="abtn abtn-blue" onclick="saveAcc('${sid}')">Save Account Record</button>
-<button class="abtn-sm btn-ghost" style="padding:6px 12px;font-size:12px" onclick="window._aSel=null;SEL_CS_ADMIN='';R()">Cancel</button>
+<button class="abtn-sm btn-ghost" style="padding:6px 12px;font-size:12px" onclick="window._aSel=null;R()">Cancel</button>
 ${sid?`<button class="abtn-sm btn-red" style="padding:6px 12px;font-size:12px;margin-left:auto" onclick="delAcc('${sid}')">Delete</button>`:''}
 </div>
 ${sid?adminAMSection(sid):''}
 </div></div></div>`;}
 
 function adminAMSection(sid){
-  const exAM=getAM(sid);
-  const csOpts=(DB.dd.connectStage)||['Initial connect','Trials connect','Business connect'];
-  if(SEL_CS_ADMIN==='' && exAM?.connectStage) SEL_CS_ADMIN=exAM.connectStage;
-  const curCS=SEL_CS_ADMIN;
+  const stageDataForAcc=getSD(sid);
+  const hasData=stageDataForAcc.length>0;
+  let selStage=document.getElementById('sel-admin-stage')?.value||AM_STAGES[0];
+  const existing=getSDStage(sid,selStage);
   return `<div class="card" style="margin-top:10px">
-<div class="sh sh-am">AM Connect <span style="font-size:11px;font-weight:500;margin-left:3px">(Admin view — edit in special cases)</span></div>
-<div style="margin-bottom:10px">
-  <label class="fl" style="margin-bottom:6px">Connect Stage</label>
-  <div id="admin-stage-pills" style="display:flex;gap:7px;flex-wrap:wrap">
-    ${csOpts.map(s=>`<button type="button" class="csp${curCS===s?' sel':''}" data-stage="${s}" onclick="selCSAdmin(this,'${s}')">${s}</button>`).join('')}
-  </div>
+<div class="sh sh-am">AM Connect Stages <span style="font-size:11px;font-weight:500;margin-left:3px">(Admin — all stages, free override)</span></div>
+${hasData?`<div class="infob" style="margin-bottom:10px">This account has data in ${stageDataForAcc.length} stage(s). Saving below will upsert for the selected stage.</div>`:''}
+<div class="fg" style="margin-bottom:10px">
+  <label class="fl">Select Stage to Edit</label>
+  <select id="sel-admin-stage" onchange="onAdminStageSelect('${sid}')" style="max-width:300px">
+    ${AM_STAGES.map(s=>`<option value="${s}"${s===AM_STAGES[0]?' selected':''}>${s}${getSDStage(sid,s)?' ✓':''}</option>`).join('')}
+  </select>
 </div>
 <div class="fg2">
-  <div class="fg"><label class="fl">Date of Connect — DM</label><input type="date" id="fa-acd" value="${exAM?.connectDateDM||''}" max="${today()}"></div>
-  <div class="fg"><label class="fl">Next Date of Connect — DM</label><input type="date" id="fa-ncd" value="${exAM?.nextConnectDateDM||''}" oninput="calcODAdmin(this.value)"></div>
+  <div class="fg"><label class="fl">AM Connect Date</label><input type="date" id="fa-acd" value="${existing?.connectDate||''}" max="${today()}"></div>
+  <div class="fg"><label class="fl">Next Connect Date</label><input type="date" id="fa-ncd" value="${existing?.nextConnectDate||''}"></div>
 </div>
-<div class="fg"><label class="fl">Connect Overdue (days)</label>
-<div class="od-disp" id="od-disp-admin">${exAM?.nextConnectDateDM?(odD(exAM.nextConnectDateDM)>0?`+${odD(exAM.nextConnectDateDM)} days overdue`:'On track — not overdue'):'Enter next connect date'}</div></div>
-<div style="margin-top:14px;padding-top:12px;border-top:1px solid #f0f3f8">
-  <div class="divlbl">Stage Action Items <span style="font-weight:400;color:var(--muted);font-size:10px">&mdash; previous stages shown read-only (&#x1F512; Edit to unlock)</span></div>
-  <div id="admin-action-items-box">${buildStageActionItems(exAM, curCS)}</div>
+<div style="margin-top:10px">
+  <div class="divlbl">Action Items <span style="font-weight:400;font-size:10px;color:var(--muted)">— 1 always present, up to 5 max</span></div>
+  <div id="admin-ai-wrapper">${buildStageActionItems(existing)}</div>
 </div>
-<button class="abtn abtn-blue" style="margin-top:12px" onclick="saveAMUpdateAdmin('${sid}','${exAM?.id||''}')">Save AM Connect</button>
+<button class="abtn abtn-blue" style="margin-top:12px" onclick="saveAdminStageData('${sid}')">Save Stage Data</button>
 </div>`;}
 
 function pgFU(){
@@ -741,20 +738,19 @@ ${isA()?`<select style="padding:4px 9px;border:1px solid var(--border);border-ra
 <button style="padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;border:2px solid ${SF.green?'#3aaa5e':'#a9dfbf'};background:${SF.green?'#3aaa5e':'#eafaf1'};color:${SF.green?'#fff':'#1e8449'}" onclick="SF.green=!SF.green;PIDX=0;R()">Completed</button>
 <button class="abtn-sm btn-ghost" style="padding:3px 9px" onclick="SF={red:false,yellow:false,green:false};SEARCH='';ASGN='';PIDX=0;R()">Clear</button>
 </div>
-<div class="tscroll"><table style="min-width:850px"><thead><tr><th>Account</th>${isA()?'<th>AM</th>':''}<th>Stage</th><th>Status</th><th>Connect Stage</th><th>Connect Date</th><th>Next Connect</th><th>AM OD</th><th>Trial Stage</th><th>Trial OD</th><th>Actions</th></tr></thead>
-<tbody>${paged.length?paged.map(a=>`<tr>
+<div class="tscroll"><table style="min-width:700px"><thead><tr><th>Account</th>${isA()?'<th>AM</th>':''}<th>Stage</th><th>Status</th><th>Latest AM Stage</th><th>Connect Date</th><th>Next Connect</th><th>AM OD</th><th>Stages Updated</th><th>Actions</th></tr></thead>
+<tbody>${paged.length?paged.map(a=>{const sd=getSD(a.id).sort((x,y)=>new Date(y.updatedAt)-new Date(x.updatedAt));const latestSD=sd[0];const od=latestSD?odD(latestSD.nextConnectDate):a.amOD;return`<tr>
 <td><strong>${a.companyName}</strong><div style="font-size:10px;color:var(--muted)">${a.accountGroup}</div>${a.adminActionItem?`<div style="font-size:10px;color:#e65100;margin-top:2px">&#128221; ${a.adminActionItem.substring(0,30)}${a.adminActionItem.length>30?'...':''}</div>`:''}</td>
 ${isA()?`<td style="font-size:11px">${a.partnerName}</td>`:''}
 <td style="font-size:11px">${a.stageName}</td>
 <td><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green'}</span></td>
-<td style="font-size:11px">${a.am?.connectStage||'—'}</td>
-<td style="font-size:11px">${fmtD(a.am?.connectDateDM)}</td>
-<td style="font-size:11px">${fmtD(a.am?.nextConnectDateDM)}</td>
-<td>${a.amOD>0?`<span class="oday">+${a.amOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td>
-<td style="font-size:11px">${a.trials.stage||'—'}</td>
-<td>${a.trOD>0?`<span class="oday">+${a.trOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td>
-<td>${isA()?`<button class="abtn-sm btn-blue" style="padding:2px 7px;font-size:10px" onclick="window._aSel='${a.id}';PAGE='account-entry';EDIT_UNLOCKED={initial:false,trials:false};R()">Edit</button>`:`<button class="abtn-sm btn-blue" style="padding:2px 7px;font-size:10px" onclick="SEL_ACC='${a.id}';EDIT_UNLOCKED={initial:false,trials:false};SEL_CS_AM='';PAGE='am-update';R()">Update AM</button>`}</td>
-</tr>`).join(''):'<tr><td colspan="12" style="text-align:center;padding:20px;color:var(--muted)">No records found</td></tr>'}
+<td style="font-size:11px">${latestSD?.stage||a.am?.connectStage||'—'}</td>
+<td style="font-size:11px">${fmtD(latestSD?.connectDate||a.am?.connectDateDM)}</td>
+<td style="font-size:11px">${fmtD(latestSD?.nextConnectDate||a.am?.nextConnectDateDM)}</td>
+<td>${od>0?`<span class="oday">+${od}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td>
+<td style="font-size:11px;text-align:center">${sd.length>0?`<span style="background:#e8f0fb;color:#1a5276;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700">${sd.length}/6</span>`:'<span style="color:var(--muted)">0/6</span>'}</td>
+<td>${isA()?`<button class="abtn-sm btn-blue" style="padding:2px 7px;font-size:10px" onclick="window._aSel='${a.id}';PAGE='account-entry';R()">Edit</button>`:`<button class="abtn-sm btn-blue" style="padding:2px 7px;font-size:10px" onclick="SEL_ACC='${a.id}';PAGE='myaccount';R()">Update</button>`}</td>
+</tr>`}).join(''):'<tr><td colspan="10" style="text-align:center;padding:20px;color:var(--muted)">No records found</td></tr>'}
 </tbody></table></div>
 <div style="display:flex;justify-content:space-between;align-items:center;margin-top:9px">
 <span style="font-size:11px;color:var(--muted)">${all.length} records</span>
@@ -764,8 +760,8 @@ ${isA()?`<td style="font-size:11px">${a.partnerName}</td>`:''}
 function pgAna(){
   const all=enAccs();
   const red=all.filter(a=>a.overallStatus==='red').length,yel=all.filter(a=>a.overallStatus==='yellow').length,grn=all.filter(a=>a.overallStatus==='green').length;
-  const byP=DB.users.filter(u=>u.role==='partner').map(p=>({name:p.name.split(' ')[0],od:all.filter(a=>a.assignedPartnerId===p.id&&a.amOD>0).length})).filter(x=>x.od>0);
-  return`<div class="g2">
+  const byP=DB.users.filter(u=>u.role==='partner').map(p=>({name:getDisplayName(p.name),od:all.filter(a=>a.assignedPartnerId===p.id&&a.amOD>0).length})).filter(x=>x.od>0);
+  return`<div class="g2" style="margin-bottom:12px">
 <div class="card"><div class="ctitle">Status Distribution</div>
 <div style="display:flex;gap:10px;margin-bottom:9px;flex-wrap:wrap">
 <span style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--muted)"><span style="width:9px;height:9px;border-radius:50%;background:#e74c3c;display:inline-block"></span>Red ${red}</span>
@@ -773,12 +769,24 @@ function pgAna(){
 <span style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--muted)"><span style="width:9px;height:9px;border-radius:50%;background:#3aaa5e;display:inline-block"></span>Green ${grn}</span>
 </div>
 <div style="position:relative;height:200px"><canvas id="donutC"></canvas></div></div>
-<div class="card"><div class="ctitle">Overdue AM Connects by Partner</div>
+<div class="card"><div class="ctitle">Overdue AM Connects by Alliance Manager</div>
 <div style="position:relative;height:${Math.max(180,byP.length*48+60)}px"><canvas id="barC"></canvas></div></div>
 </div>
+<div class="card" style="margin-bottom:12px">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+    <div>
+      <div class="ctitle" style="margin-bottom:2px">Accounts by Group — Acres Potential (Power BI Style)</div>
+      <div style="font-size:11px;color:var(--muted)">Click any segment to see group details. Data from Est. Peak Potential field in Account Records.</div>
+    </div>
+  </div>
+  <div class="g2" style="align-items:start">
+    <div style="position:relative;height:280px"><canvas id="acresPieChart"></canvas></div>
+    <div id="pie-detail-panel" style="display:none"></div>
+  </div>
+</div>
 <div class="card"><div class="ctitle">Alliance Manager Activity Summary</div>
-<table><thead><tr><th>Alliance Manager</th><th>Accounts</th><th>Red</th><th>Yellow</th><th>Green</th><th>AM Updated</th><th>AM Overdue</th></tr></thead>
-<tbody>${DB.users.filter(u=>u.role==='partner').map(p=>{const pa=all.filter(a=>a.assignedPartnerId===p.id);const r=pa.filter(a=>a.overallStatus==='red').length,y=pa.filter(a=>a.overallStatus==='yellow').length,g=pa.filter(a=>a.overallStatus==='green').length,amU=pa.filter(a=>a.am).length,od=pa.filter(a=>a.amOD>0).length;return`<tr><td><strong>${p.name}</strong></td><td>${pa.length}</td><td>${r>0?`<span class="pill p-red" style="font-size:10px">${r}</span>`:'—'}</td><td>${y>0?`<span class="pill p-yellow" style="font-size:10px">${y}</span>`:'—'}</td><td>${g>0?`<span class="pill p-green" style="font-size:10px">${g}</span>`:'—'}</td><td style="font-size:11px">${amU}/${pa.length}</td><td>${od>0?`<span class="oday">${od}</span>`:'<span style="color:#3aaa5e">0</span>'}</td></tr>`;}).join('')}
+<table><thead><tr><th>Alliance Manager</th><th>Accounts</th><th>Red</th><th>Yellow</th><th>Green</th><th>Stages Updated</th><th>AM Overdue</th></tr></thead>
+<tbody>${DB.users.filter(u=>u.role==='partner').map(p=>{const pa=all.filter(a=>a.assignedPartnerId===p.id);const r=pa.filter(a=>a.overallStatus==='red').length,y=pa.filter(a=>a.overallStatus==='yellow').length,g=pa.filter(a=>a.overallStatus==='green').length,stagesUpd=pa.reduce((s,a)=>s+DB.stageData.filter(sd=>sd.accountId===a.id).length,0),od=pa.filter(a=>a.amOD>0).length;return`<tr><td><strong>${p.name}</strong></td><td>${pa.length}</td><td>${r>0?`<span class="pill p-red" style="font-size:10px">${r}</span>`:'—'}</td><td>${y>0?`<span class="pill p-yellow" style="font-size:10px">${y}</span>`:'—'}</td><td>${g>0?`<span class="pill p-green" style="font-size:10px">${g}</span>`:'—'}</td><td style="font-size:11px">${stagesUpd} stage record${stagesUpd!==1?'s':''}</td><td>${od>0?`<span class="oday">${od}</span>`:'<span style="color:#3aaa5e">0</span>'}</td></tr>`;}).join('')}
 </tbody></table></div>`;}
 
 function drawCH(){
@@ -787,7 +795,7 @@ function drawCH(){
   const dc=document.getElementById('donutC');
   if(dc)charts.d=new Chart(dc,{type:'doughnut',data:{labels:['Red','Yellow','Green'],datasets:[{data:[all.filter(a=>a.overallStatus==='red').length,all.filter(a=>a.overallStatus==='yellow').length,all.filter(a=>a.overallStatus==='green').length],backgroundColor:['#e74c3c','#e6a817','#3aaa5e'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{display:false}}}});
   const bc=document.getElementById('barC');
-  const byP=DB.users.filter(u=>u.role==='partner').map(p=>({name:p.name.split(' ')[0],od:all.filter(a=>a.assignedPartnerId===p.id&&a.amOD>0).length})).filter(x=>x.od>0);
+  const byP=DB.users.filter(u=>u.role==='partner').map(p=>({name:getDisplayName(p.name),od:all.filter(a=>a.assignedPartnerId===p.id&&a.amOD>0).length})).filter(x=>x.od>0);
   if(bc&&byP.length)charts.b=new Chart(bc,{type:'bar',data:{labels:byP.map(d=>d.name),datasets:[{data:byP.map(d=>d.od),backgroundColor:'#e74c3c',borderRadius:5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
   const sbEl=document.getElementById('stageBar');
   if(sbEl){
@@ -798,17 +806,88 @@ function drawCH(){
   const cdEl=document.getElementById('connectDonut');
   if(cdEl){
     const donutAccs=isA()?all:all.filter(a=>a.assignedPartnerId===CU.id);
-    const cCounts=[donutAccs.filter(a=>a.am&&a.am.connectStage==='Initial connect').length,donutAccs.filter(a=>a.am&&a.am.connectStage==='Trials connect').length,donutAccs.filter(a=>a.am&&a.am.connectStage==='Business connect').length,donutAccs.filter(a=>!a.am||!a.am.connectStage).length];
-    charts.cd=new Chart(cdEl,{type:'doughnut',data:{labels:['Initial','Trials','Business','Not started'],datasets:[{data:cCounts,backgroundColor:['#e6a817','#4a7ec7','#3aaa5e','#dde3ec'],borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,cutout:'55%',plugins:{legend:{display:false}}}});
+    // Count accounts with stage data in each AM stage
+    const stageCts=AM_STAGES.map(s=>DB.stageData.filter(sd=>donutAccs.find(a=>a.id===sd.accountId)&&sd.stage===s).length);
+    const noStage=donutAccs.filter(a=>!DB.stageData.find(sd=>sd.accountId===a.id)).length;
+    charts.cd=new Chart(cdEl,{type:'doughnut',data:{labels:[...AM_STAGES,'Not started'],datasets:[{data:[...stageCts,noStage],backgroundColor:['#4a7ec7','#3a8fd6','#e6a817','#f39c12','#3aaa5e','#27ae60','#dde3ec'],borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,cutout:'55%',plugins:{legend:{display:false}}}});
   }
   const amEl=document.getElementById('amLeader');
   if(amEl){
-    const stagePct={'Initial connect':33,'Trials connect':66,'Business connect':100};
     const pts=isA()?DB.users.filter(u=>u.role==='partner'):DB.users.filter(u=>u.id===CU.id);
-    const amData=pts.map(p=>{const pa=all.filter(a=>a.assignedPartnerId===p.id);const avg=pa.length?Math.round(pa.reduce((s,a)=>s+(stagePct[a.am&&a.am.connectStage]||0),0)/pa.length):0;return{name:p.name.split(' ')[0],avg,total:pa.length};}).filter(d=>d.total>0);
+    const amData=pts.map(p=>{
+      const pa=all.filter(a=>a.assignedPartnerId===p.id);
+      // Progress based on stage data presence (1 stage = 16%, all 6 = 100%)
+      const stagesUpdated=pa.reduce((sum,a)=>{return sum+(DB.stageData.filter(sd=>sd.accountId===a.id).length);},0);
+      const maxPossible=pa.length*AM_STAGES.length;
+      const avg=maxPossible>0?Math.round((stagesUpdated/maxPossible)*100):0;
+      return{name:getDisplayName(p.name),avg,total:pa.length};
+    }).filter(d=>d.total>0);
     if(amData.length)charts.am=new Chart(amEl,{type:'bar',data:{labels:amData.map(d=>d.name),datasets:[{data:amData.map(d=>d.avg),backgroundColor:amData.map(d=>d.avg>=66?'#3aaa5e':d.avg>=33?'#4a7ec7':'#e6a817'),borderRadius:6,borderSkipped:false}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%',font:{size:10}}},y:{ticks:{font:{size:10}}}}}});
   }
+  // Pie chart in Analytics page
+  const pieEl=document.getElementById('acresPieChart');
+  if(pieEl)drawAcresPie(pieEl);
 }
+
+function drawAcresPie(el){
+  if(charts.pie){try{charts.pie.destroy();}catch(e){}}
+  const groups={};
+  DB.accounts.forEach(a=>{
+    const key=a.accountGroup||'Ungrouped';
+    if(!groups[key])groups[key]={label:key,importance:a.accountImportance||'—',peak:0,ab:0,ff:0,count:0};
+    groups[key].peak+=(a.estimatedPeakPotential||0);
+    groups[key].ab+=(a.fy2627AB||0);
+    groups[key].ff+=(a.fy2627FF||0);
+    groups[key].count++;
+    if(a.accountImportance)groups[key].importance=a.accountImportance;
+  });
+  const data=Object.values(groups).sort((x,y)=>y.peak-x.peak);
+  if(!data.length||data.every(d=>d.peak===0)){
+    el.parentElement.innerHTML='<div style="text-align:center;padding:32px;color:var(--muted);font-size:12px">No Estimated Peak Potential data found.<br>Please populate this field in Account Records to see the chart.</div>';
+    return;
+  }
+  const COLORS=['#4a7ec7','#3aaa5e','#e6a817','#e74c3c','#9b59b6','#1abc9c','#f39c12','#2980b9','#27ae60','#c0392b'];
+  charts.pie=new Chart(el,{
+    type:'pie',
+    data:{labels:data.map(d=>d.label),datasets:[{data:data.map(d=>d.peak),backgroundColor:data.map((_,i)=>COLORS[i%COLORS.length]),borderWidth:2,borderColor:'#fff',hoverBorderWidth:3}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{
+        legend:{position:'right',labels:{font:{size:11},boxWidth:12,padding:8}},
+        tooltip:{callbacks:{label:ctx=>{const d=data[ctx.dataIndex];const tot=data.reduce((s,x)=>s+x.peak,0);const pct=tot>0?((d.peak/tot)*100).toFixed(1):'0';return d.label+': '+d.peak.toFixed(1)+' Acres ('+pct+'%)';}}}
+      },
+      onClick:(evt,els)=>{if(!els.length)return;showPieDetail(data[els[0].index],COLORS[els[0].index%COLORS.length]);}
+    }
+  });
+}
+
+function showPieDetail(d,color){
+  const p=document.getElementById('pie-detail-panel');
+  if(!p)return;
+  p.style.display='block';
+  p.innerHTML=`<div style="border-left:4px solid ${color};padding:14px 16px;background:#fff;border-radius:8px;border:1px solid var(--border)">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+  <div><div style="font-size:15px;font-weight:800;color:#1a1a2e">${d.label}</div>
+  <div style="font-size:11px;color:var(--muted);margin-top:2px">${d.count} account${d.count!==1?'s':''} &middot; Importance: <strong>${d.importance}</strong></div></div>
+  <button onclick="document.getElementById('pie-detail-panel').style.display='none'" style="background:none;border:none;font-size:16px;cursor:pointer;color:var(--muted)">✕</button>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px">
+  <div style="background:#e8f0fb;border-radius:8px;padding:12px;text-align:center">
+    <div style="font-size:10px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Est. Peak Potential</div>
+    <div style="font-size:22px;font-weight:800;color:#4a7ec7">${d.peak.toFixed(1)}</div>
+    <div style="font-size:10px;color:var(--muted)">Acres</div>
+  </div>
+  <div style="background:#eafaf1;border-radius:8px;padding:12px;text-align:center">
+    <div style="font-size:10px;font-weight:700;color:#1e8449;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">FY 26–27 AB</div>
+    <div style="font-size:22px;font-weight:800;color:#3aaa5e">${d.ab.toFixed(1)}</div>
+    <div style="font-size:10px;color:var(--muted)">Acres</div>
+  </div>
+  <div style="background:#fff8f0;border-radius:8px;padding:12px;text-align:center">
+    <div style="font-size:10px;font-weight:700;color:#e65100;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">FY 26–27 FF</div>
+    <div style="font-size:22px;font-weight:800;color:#e6a817">${d.ff.toFixed(1)}</div>
+    <div style="font-size:10px;color:var(--muted)">Acres</div>
+  </div>
+</div></div>`;}
+
 
 /* ─────────────────────────── REPORTS ─────────────────────────── */
 const COLS=[
@@ -818,34 +897,42 @@ const COLS=[
   {k:'opportunityCategory',l:'Opportunity Category',s:'Overview'},{k:'crop',l:'Crop',s:'Overview'},
   {k:'stageName',l:'Stage',s:'Overview'},{k:'overallStatus',l:'Overall Status',s:'Overview'},
   {k:'adminActionItem',l:'Admin Action Item',s:'Overview'},
-  {k:'partnerName',l:'Partner',s:'AM Connect'},{k:'connectStage',l:'Connect Stage',s:'AM Connect'},
-  {k:'connectDateDM',l:'Connect Date (DM)',s:'AM Connect'},{k:'nextConnectDateDM',l:'Next Connect Date (DM)',s:'AM Connect'},
+  // FY Metrics
+  {k:'fy2627AB',l:'FY 26-27 AB (Acres)',s:'FY Metrics'},
+  {k:'fy2627FF',l:'FY 26-27 FF (Acres)',s:'FY Metrics'},
+  {k:'estimatedPeakPotential',l:'Est. Peak Potential (Acres)',s:'FY Metrics'},
+  {k:'accountImportance',l:'Account Importance',s:'FY Metrics'},
+  // AM Connect (legacy flat structure — kept for backwards compat)
+  {k:'partnerName',l:'Alliance Manager',s:'AM Connect'},
+  {k:'connectStage',l:'Connect Stage (Legacy)',s:'AM Connect'},
+  {k:'connectDateDM',l:'Connect Date (DM)',s:'AM Connect'},
+  {k:'nextConnectDateDM',l:'Next Connect Date (DM)',s:'AM Connect'},
   {k:'amOD',l:'AM Overdue (days)',s:'AM Connect'},
-  {k:'initialActionItem',l:'Initial Connect Action',s:'Stage Action Items'},
-  {k:'trialsActionItem',l:'Trials Connect Action',s:'Stage Action Items'},
-  {k:'bizAction1',l:'Business Action 1',s:'Stage Action Items'},
-  {k:'bizAction2',l:'Business Action 2',s:'Stage Action Items'},
-  {k:'bizAction3',l:'Business Action 3',s:'Stage Action Items'},
-  {k:'trialStage',l:'Trial Stage',s:'Trials'},{k:'trialStatus',l:'Trial Status',s:'Trials'},
-  {k:'trialConnectDate',l:'Trial Connect Date',s:'Trials'},{k:'trialOD',l:'Trial OD (days)',s:'Trials'},
-  {k:'agriManager',l:'Agri Manager',s:'Trials'},{k:'remarks',l:'Remarks',s:'Trials'}
+  // Stage Data (new structure — filled items only)
+  {k:'stagesUpdated',l:'Stages Updated',s:'Stage Data'},
+  {k:'latestStage',l:'Latest Stage',s:'Stage Data'},
+  {k:'latestActionItem',l:'Latest Action Item',s:'Stage Data'},
 ];
 
 function getRV(a){
   const am=a.am;
+  const stageData=getSD(a.id);
+  const latestSD=stageData.sort((x,y)=>new Date(y.updatedAt)-new Date(x.updatedAt))[0];
+  const latestAI=latestSD?.actionItems?.filter(i=>i.text).map(i=>i.text).join(' | ')||'';
   return{
     companyName:a.companyName,accountGroup:a.accountGroup,focusArea:a.focusArea,
     programManager:a.programManager,companyType:a.companyType,accountPriority:a.accountPriority,
     opportunityCategory:a.opportunityCategory,crop:a.crop,stageName:gs(a.stageId).name,
     overallStatus:a.overallStatus,adminActionItem:a.adminActionItem||'',
+    fy2627AB:a.fy2627AB||0,fy2627FF:a.fy2627FF||0,
+    estimatedPeakPotential:a.estimatedPeakPotential||0,
+    accountImportance:a.accountImportance||'',
     partnerName:gu(a.assignedPartnerId).name,
     connectStage:am?.connectStage||'',connectDateDM:am?.connectDateDM||'',
     nextConnectDateDM:am?.nextConnectDateDM||'',amOD:a.amOD||0,
-    initialActionItem:am?.initialActionItem||'',
-    trialsActionItem:am?.trialsActionItem||'',
-    bizAction1:am?.bizAction1||'',bizAction2:am?.bizAction2||'',bizAction3:am?.bizAction3||'',
-    trialStage:a.trials.stage,trialStatus:a.trials.status,trialConnectDate:a.trials.connectDate,
-    trialOD:a.trOD||0,agriManager:a.trials.agriManager,remarks:a.trials.remarks
+    stagesUpdated:stageData.length,
+    latestStage:latestSD?.stage||'',
+    latestActionItem:latestAI,
   };
 }
 
@@ -859,7 +946,7 @@ function pgRep(){
 <div class="card"><div class="ctitle">Report Builder</div>
 <div style="display:flex;gap:7px;margin-bottom:12px"><button class="abtn-sm btn-blue" style="padding:4px 10px" onclick="COLS.forEach(c=>RPTP[c.k]=true);R()">Select All</button><button class="abtn-sm btn-ghost" style="padding:4px 10px" onclick="COLS.forEach(c=>RPTP[c.k]=false);R()">Clear All</button></div>
 ${secs.map(sec=>`<div style="margin-bottom:12px">
-<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:${sec==='Stage Action Items'?'#e65100':'var(--muted)'};padding:4px 7px;background:${sec==='Stage Action Items'?'#fff8f0':'#f4f6fb'};border-radius:5px;margin-bottom:7px;${sec==='Stage Action Items'?'border:1px solid #ffcc80;':''}">${sec}${sec==='Stage Action Items'?' &#128221;':''}</div>
+<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);padding:4px 7px;background:#f4f6fb;border-radius:5px;margin-bottom:7px;border-left:3px solid ${sec==='FY Metrics'?'#3aaa5e':sec==='Stage Data'?'#4a7ec7':sec==='AM Connect'?'#e6a817':'var(--border)'};">${sec}</div>
 <div class="rp-grid">${COLS.filter(c=>c.s===sec).map(c=>`<label class="rcheck${RPTP[c.k]?' on':''}"><input type="checkbox" ${RPTP[c.k]?'checked':''} onchange="RPTP['${c.k}']=this.checked;R()"> ${c.l}</label>`).join('')}</div></div>`).join('')}
 <div style="background:#f8fbff;border:1px solid #b5d4f4;border-radius:8px;padding:10px;margin-top:10px;margin-bottom:10px">
   <div style="font-size:11px;font-weight:700;color:#1a5276;margin-bottom:8px">&#128198; Filter by Date Range (optional)</div>
@@ -1009,20 +1096,22 @@ async function buildAuditXLSX(logs,title,filenamePrefix){
 async function dlProgressCSV(){
   try{
     const all=enAccs();
-    const colHdrs=['Company','Group','Alliance Manager','Connect Stage','Progress %','Overall Status',
-      'Admin Action Item','Initial Connect Action','Trials Connect Action',
-      'Business Action 1','Business Action 2','Business Action 3',
-      'AM Overdue Days','Connect Date (DM)','Next Connect Date (DM)'];
-    const stages={'Initial connect':33,'Trials connect':66,'Business connect':100};
-    const rows=all.map(a=>[
-      a.companyName,a.accountGroup||'',a.partnerName,
-      a.am?.connectStage||'Not started',(stages[a.am?.connectStage]||0)+'%',
-      a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green',
-      a.adminActionItem||'',a.am?.initialActionItem||'',a.am?.trialsActionItem||'',
-      a.am?.bizAction1||'',a.am?.bizAction2||'',a.am?.bizAction3||'',
-      a.amOD||0,a.am?.connectDateDM||'',a.am?.nextConnectDateDM||'',
-    ]);
-    const widths=[22,18,20,20,12,14,30,28,28,26,26,26,14,14,16];
+    const colHdrs=['Company','Group','Alliance Manager','Latest Stage','Stages Updated','Overall Status',
+      'Admin Action Item','FY 26-27 AB (Acres)','FY 26-27 FF (Acres)','Est. Peak Potential (Acres)',
+      'Account Importance','AM Overdue Days'];
+    const rows=all.map(a=>{
+      const sd=getSD(a.id).sort((x,y)=>new Date(y.updatedAt)-new Date(x.updatedAt));
+      const latestSD=sd[0];
+      const filledAI=latestSD?.actionItems?.filter(i=>i.text).map(i=>i.text).join(' | ')||'';
+      return[
+        a.companyName,a.accountGroup||'',a.partnerName,
+        latestSD?.stage||a.am?.connectStage||'Not started',sd.length+'/6',
+        a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green',
+        a.adminActionItem||'',a.fy2627AB||0,a.fy2627FF||0,a.estimatedPeakPotential||0,
+        a.accountImportance||'',a.amOD||0,
+      ];
+    });
+    const widths=[22,18,20,20,12,14,30,14,14,18,18,12];
     const wb=await buildBrandedWorkbook('Progress Report — Company-wise & Alliance Manager-based',colHdrs,rows,widths,'Progress Report');
     await downloadWorkbook(wb,'StringBio_AgriTrack_ProgressReport_'+today()+'.xlsx');
     sal('Progress report downloaded!','as');
@@ -1055,119 +1144,99 @@ function pgAdmin(){
   const ddPanel=can('manageDropdowns')?`<div class="card"><div class="ctitle">Dropdown Options Manager</div>${Object.keys(dd).map(key=>`<div style="margin-bottom:10px;border:1px solid var(--border);border-radius:8px;padding:10px"><div style="font-size:11px;font-weight:700;color:#1a1a2e;margin-bottom:6px">${ddL[key]||key}</div><div style="display:flex;flex-wrap:wrap;min-height:26px;margin-bottom:6px">${(dd[key]||[]).map((o,i)=>`<span class="dtag">${o}<button class="dtag-x" onclick="rmDD('${key}',${i})">&times;</button></span>`).join('')}${!dd[key]?.length?'<span style="font-size:11px;color:var(--muted)">No options yet</span>':''}</div><div style="display:flex;gap:5px"><input type="text" id="dd-${key}" placeholder="New option..." style="flex:1;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:5px;outline:none"><button class="abtn-sm btn-blue" style="padding:4px 10px;white-space:nowrap" onclick="addDD('${key}')">+ Add</button></div></div>`).join('')}</div>`:`<div class="card" style="border-color:#fde8e8"><div style="padding:16px;text-align:center;color:#e74c3c;font-size:12px">&#x26D4; No permission to manage dropdowns</div></div>`;
   return`<div class="g2"><div>${pendingPanel}${saPanel}${partnerPanel}</div><div>${stagesPanel}${ddPanel}</div></div>`;}
 
-/* ─────────────────────────── PROGRESS PAGES ─────────────────────────── */
-function pgProgress(){
-  const myAccs=enAccs().filter(a=>a.assignedPartnerId===CU.id);
-  const stages=['Initial connect','Trials connect','Business connect'];
-  const stageColors={'Initial connect':'#e6a817','Trials connect':'#4a7ec7','Business connect':'#3aaa5e'};
-  const stagePct={'Initial connect':33,'Trials connect':66,'Business connect':100};
-  if(!myAccs.length)return'<div class="card"><div style="text-align:center;padding:28px;color:var(--muted)">No accounts assigned yet.</div></div>';
-  const done=myAccs.filter(a=>a.am&&a.am.connectStage==='Business connect').length;
-  const inProgress=myAccs.filter(a=>a.am&&a.am.connectStage&&a.am.connectStage!=='Business connect').length;
-  const notStarted=myAccs.filter(a=>!a.am||!a.am.connectStage).length;
-  const avgPct=myAccs.length?Math.round(myAccs.reduce((sum,a)=>sum+(stagePct[a.am?.connectStage]||0),0)/myAccs.length):0;
-  let accsHtml='';
-  myAccs.forEach(a=>{
-    const cs=a.am?a.am.connectStage:'';
-    const pct=stagePct[cs]||0;
-    const col=stageColors[cs]||'#dde3ec';
-    const aiMap={'Initial connect':a.am?.initialActionItem||'','Trials connect':a.am?.trialsActionItem||'','Business connect':[a.am?.bizAction1,a.am?.bizAction2,a.am?.bizAction3].filter(Boolean).join(' | ')||''};
-    let milestones='';
-    stages.forEach((s,i)=>{
-      const isDone=pct>=(i+1)*33,isActive=cs===s;
-      const aiStr=aiMap[s]?`<div style="font-size:9px;color:#4a5568;font-style:italic;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${aiMap[s]}">${aiMap[s]}</div>`:'';
-      milestones+=`<div style="flex:1;text-align:center"><div style="width:14px;height:14px;border-radius:50%;border:2px solid ${isDone||isActive?stageColors[s]:'#dde3ec'};background:${isDone?stageColors[s]:'#fff'};margin:0 auto 3px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff">${isDone?'&#x2713;':''}</div><div style="font-size:9px;color:${isActive?stageColors[s]:'var(--muted)'};font-weight:${isActive?'700':'400'}">${s}</div>${aiStr}</div>`;
-    });
-    const adminAIHtml=a.adminActionItem?`<div style="margin-top:6px;padding:5px 9px;background:#fff8f0;border:1px solid #ffcc80;border-radius:5px;font-size:11px"><span style="color:#e65100;font-weight:700">&#128221; Admin Task:</span> ${a.adminActionItem}</div>`:'';
-    accsHtml+=`<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #f0f3f8">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px"><div><div style="font-size:13px;font-weight:700">${a.companyName}</div><div style="font-size:11px;color:var(--muted);margin-top:2px">${a.accountGroup} &middot; ${a.stageName}</div></div>
-      <div style="display:flex;gap:6px;align-items:center">${cs?`<span style="background:${col}22;color:${col};border:1px solid ${col}44;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700">${cs}</span>`:'<span style="background:#f4f6fb;color:var(--muted);padding:2px 10px;border-radius:12px;font-size:11px">Not started</span>'}${a.amOD>0?`<span class="oday">+${a.amOD}d OD</span>`:''}<span style="font-size:14px;font-weight:800;color:${col||'var(--muted)'}">${pct}%</span></div></div>
-      <div style="background:#f0f3f8;border-radius:8px;height:8px;overflow:hidden;margin-bottom:6px"><div style="background:linear-gradient(90deg,#c0392b,#e74c3c 20%,#e6a817 33%,#f0c040 50%,#2ecc71 66%,#3aaa5e 100%);height:100%;width:${pct}%;border-radius:8px;transition:width .8s"></div></div>
-      <div style="display:flex;gap:0">${milestones}</div>${adminAIHtml}</div>`;
-  });
-  return `<div style="font-size:17px;font-weight:700;margin-bottom:3px">My Progress Report</div>
-<div style="font-size:12px;color:var(--muted);margin-bottom:16px">Track your AM Connect progress and action items across all assigned accounts.</div>
-<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
-<div class="kcard kc-b"><div class="klbl">Total Accounts</div><div class="knum">${myAccs.length}</div></div>
-<div class="kcard kc-g"><div class="klbl">Business Connect</div><div class="knum">${done}</div><div class="ksub">Completed</div></div>
-<div class="kcard kc-y"><div class="klbl">In Progress</div><div class="knum">${inProgress}</div></div>
-<div class="kcard kc-r"><div class="klbl">Not Started</div><div class="knum">${notStarted}</div></div></div>
-<div class="card" style="margin-bottom:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="ctitle" style="margin-bottom:0">Overall Portfolio Progress</div><div style="font-size:20px;font-weight:800;color:#4a7ec7">${avgPct}%</div></div>
-<div style="background:#f0f3f8;border-radius:10px;height:14px;overflow:hidden"><div style="background:linear-gradient(90deg,#c0392b,#e74c3c ${Math.min(avgPct,20)}%,#e6a817 33%,#f0c040 50%,#2ecc71 66%,#3aaa5e 100%);height:100%;width:${avgPct}%;border-radius:10px;transition:width 1s"></div></div></div>
-<div class="card"><div class="ctitle">Account-wise Progress &amp; Action Items</div>${accsHtml}</div>`;}
+/* ─────────────────────────── PROGRESS PAGES (REMOVED) ─────────────────────────── */
+/* My Progress feature has been removed per requirements.
+   Progress tracking is now available via:
+   - For partners: My Account → Stage Summary table
+   - For admins: Analytics tab → Alliance Manager Activity Summary */
+function pgProgress(){PAGE='myaccount';R();return'';}
+function pgAdminProgress(){PAGE='analytics';R();return'';}
 
-function pgAdminProgress(){
-  if(!isA())return'<div style="text-align:center;padding:40px;color:var(--muted)">Access denied</div>';
-  const all=enAccs();
-  const pts=DB.users.filter(u=>u.role==='partner');
-  const stageColors={'Initial connect':'#e6a817','Trials connect':'#4a7ec7','Business connect':'#3aaa5e'};
-  const stagePct={'Initial connect':33,'Trials connect':66,'Business connect':100};
-  const amRows=pts.map(p=>{const pa=all.filter(a=>a.assignedPartnerId===p.id);if(!pa.length)return null;const done=pa.filter(a=>a.am&&a.am.connectStage==='Business connect').length;const inProg=pa.filter(a=>a.am&&a.am.connectStage&&a.am.connectStage!=='Business connect').length;const notStarted=pa.filter(a=>!a.am||!a.am.connectStage).length;const avg=pa.length?Math.round(pa.reduce((s,a)=>s+(stagePct[a.am&&a.am.connectStage]||0),0)/pa.length):0;return{p,pa,done,inProg,notStarted,avg};}).filter(Boolean);
-  function buildAMCard(row){
-    const{p,pa,done,inProg,notStarted,avg}=row;
-    let accs='';
-    pa.forEach(a=>{
-      const cs=a.am?a.am.connectStage:'';const pct=stagePct[cs]||0;const col=stageColors[cs]||'#dde3ec';
-      const latestAI=[a.am?.bizAction3,a.am?.bizAction2,a.am?.bizAction1,a.am?.trialsActionItem,a.am?.initialActionItem].find(Boolean)||'';
-      accs+=`<div style="padding:7px 9px;border:1px solid ${a.amOD>0?'#f5b7b1':'var(--border)'};border-radius:7px;background:${a.amOD>0?'#fff8f8':'#fafbfe'}">
-        <div style="font-size:11px;font-weight:700;margin-bottom:4px">${a.companyName}</div>
-        <div style="background:#f0f3f8;border-radius:5px;height:5px;overflow:hidden;margin-bottom:4px"><div style="background:${col};height:100%;width:${pct}%;border-radius:5px"></div></div>
-        <div style="display:flex;justify-content:space-between;font-size:10px"><span style="color:${col};font-weight:600">${cs||'Not started'}</span>${a.amOD>0?`<span class="oday">+${a.amOD}d</span>`:`<span style="color:#3aaa5e;font-weight:600">${pct}%</span>`}</div>
-        ${latestAI?`<div style="font-size:9px;color:#4a5568;margin-top:3px;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${latestAI}">${latestAI}</div>`:''}
-      </div>`;
-    });
-    const initials=p.name.split(' ').map(w=>w[0]).join('').slice(0,2);
-    return `<div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #f0f3f8">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div style="display:flex;align-items:center;gap:8px"><div class="av avp" style="width:32px;height:32px;font-size:11px">${initials}</div>
-        <div><div style="font-size:13px;font-weight:700">${p.name}</div><div style="font-size:11px;color:var(--muted)">${pa.length} accounts &middot; ${done} completed &middot; ${inProg} in progress</div></div></div>
-        <div style="font-size:22px;font-weight:800;color:#4a7ec7">${avg}%</div>
-      </div>
-      <div style="background:#f0f3f8;border-radius:8px;height:10px;overflow:hidden;margin-bottom:8px"><div style="background:linear-gradient(90deg,#c0392b,#e74c3c 20%,#e6a817 33%,#f0c040 50%,#2ecc71 66%,#3aaa5e 100%);height:100%;width:${avg}%;border-radius:8px"></div></div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:7px">${accs}</div>
-    </div>`;
-  }
-  const companyRows=all.map(a=>{
-    const latestAI=[a.am?.bizAction3,a.am?.bizAction2,a.am?.bizAction1,a.am?.trialsActionItem,a.am?.initialActionItem].find(Boolean)||'';
-    const col=stageColors[a.am?.connectStage]||'var(--muted)';
-    const bg=stageColors[a.am?.connectStage]?stageColors[a.am.connectStage]+'22':'#f4f6fb';
-    const border=stageColors[a.am?.connectStage]?stageColors[a.am.connectStage]+'44':'#dde3ec';
-    const pct=stagePct[a.am?.connectStage]||0;
-    return `<tr>
-      <td><strong style="font-size:12px">${a.companyName}</strong>${a.adminActionItem?`<div style="font-size:10px;color:#e65100;margin-top:2px">&#128221; ${a.adminActionItem.substring(0,35)}${a.adminActionItem.length>35?'...':''}</div>`:''}</td>
-      <td style="font-size:11px;color:var(--muted)">${a.accountGroup||'—'}</td>
-      <td style="font-size:11px">${a.partnerName}</td>
-      <td><span style="background:${bg};color:${col};border:1px solid ${border};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">${a.am?.connectStage||'Not started'}</span></td>
-      <td><div style="display:flex;align-items:center;gap:7px"><div style="background:#f0f3f8;border-radius:5px;height:6px;width:80px;overflow:hidden"><div style="background:${stageColors[a.am?.connectStage]||'#dde3ec'};height:100%;width:${pct}%;border-radius:5px"></div></div><span style="font-size:11px;font-weight:700;color:${col}">${pct}%</span></div></td>
-      <td><span class="pill ${sc(a.overallStatus)}" style="font-size:10px">${a.overallStatus}</span></td>
-      <td>${a.amOD>0?`<span class="oday">+${a.amOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td>
-      <td style="font-size:10px;color:#4a5568;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${latestAI||''}">${latestAI||'—'}</td>
-    </tr>`;
-  });
-  const totalAcc=all.length,bizDone=all.filter(a=>a.am&&a.am.connectStage==='Business connect').length,inProg=all.filter(a=>a.am&&a.am.connectStage&&a.am.connectStage!=='Business connect').length,notStarted=all.filter(a=>!a.am||!a.am.connectStage).length;
-  return `<div style="font-size:17px;font-weight:700;margin-bottom:3px">Progress Report</div>
-<div style="font-size:12px;color:var(--muted);margin-bottom:14px">Company-wise and Alliance Manager-based progress overview.</div>
-<button class="abtn" style="background:#3aaa5e;color:#fff;padding:7px 16px;margin-bottom:16px" onclick="dlProgressCSV()">&#8595; Download Progress Report (Excel)</button>
-<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
-<div class="kcard kc-b"><div class="klbl">Total Accounts</div><div class="knum">${totalAcc}</div></div>
-<div class="kcard kc-g"><div class="klbl">Business Connect</div><div class="knum">${bizDone}</div></div>
-<div class="kcard kc-y"><div class="klbl">In Progress</div><div class="knum">${inProg}</div></div>
-<div class="kcard kc-r"><div class="klbl">Not Started</div><div class="knum">${notStarted}</div></div></div>
-<div class="card" style="margin-bottom:16px"><div class="ctitle">Alliance Manager — Progress Summary</div>${amRows.map(buildAMCard).join('')}</div>
-<div class="card"><div class="ctitle">Company-wise Progress Table (with latest action item)</div>
-<div class="tscroll"><table style="min-width:700px"><thead><tr><th>Company</th><th>Group</th><th>Alliance Manager</th><th>Connect Stage</th><th>Progress</th><th>Status</th><th>AM OD</th><th>Latest Action Item</th></tr></thead>
-<tbody>${companyRows.join('')}</tbody></table></div></div>`;}
 
-function pgMyAcc(){return`<div class="g2">
-<div class="card"><div class="ctitle">Profile</div>
-<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px"><div class="av ${CU.role==='admin'?'ava':CU.role==='superadmin'?'avs':'avp'}" style="width:44px;height:44px;font-size:14px">${CU.name.split(' ').map(w=>w[0]).join('').slice(0,2)}</div>
-<div><div style="font-size:13px;font-weight:700">${CU.name}</div><div style="font-size:11px;color:var(--muted)">${CU.email}</div><span style="padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;background:#e8f0fb;color:#4a7ec7;margin-top:3px;display:inline-block">${displayRole(CU.role)}</span></div></div>
+function pgMyAcc(){
+  const myAccs=isA()?[]:enAccs().filter(a=>a.assignedPartnerId===CU.id);
+  const selAcc=SEL_ACC?DB.accounts.find(a=>a.id===SEL_ACC):null;
+  const selAccE=selAcc?enAccs().find(a=>a.id===SEL_ACC):null;
+  const selSD=selAcc?getSDStage(selAcc.id,document.getElementById('sel-am-stage')?.value||AM_STAGES[0]):null;
+  const profileCard=`<div class="card">
+<div class="ctitle">Profile</div>
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+  <div class="av ${CU.role==='admin'?'ava':CU.role==='superadmin'?'avs':'avp'}" style="width:44px;height:44px;font-size:14px">${CU.name.split(' ').filter(w=>!['dr.','mr.','mrs.','ms.'].includes(w.toLowerCase().replace('.','')||w.toLowerCase())).map(w=>w[0]).join('').slice(0,2)||CU.name.slice(0,2)}</div>
+  <div><div style="font-size:13px;font-weight:700">${CU.name}</div>
+  <div style="font-size:11px;color:var(--muted)">${CU.email}</div>
+  <span style="padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;background:#e8f0fb;color:#4a7ec7;margin-top:3px;display:inline-block">${displayRole(CU.role)}</span></div>
+</div>
 ${fi('Full Name','men',CU.name)}${fi('Email','mee',CU.email,'email')}
-<button class="abtn abtn-blue" onclick="saveProf()">Save Changes</button></div>
-<div class="card"><div class="ctitle">Change Password</div>
+<button class="abtn abtn-blue" onclick="saveProf()">Save Changes</button>
+<div style="margin-top:16px;padding-top:12px;border-top:1px solid #f0f3f8">
+<div class="ctitle">Change Password</div>
 ${fi('Current Password','mec','','password')}${fi('New Password','men2','','password')}${fi('Confirm New','mecf','','password')}
-<button class="abtn abtn-blue" onclick="changePw()">Update Password</button></div>
-</div>`;}
+<button class="abtn abtn-blue" onclick="changePw()">Update Password</button>
+</div></div>`;
+
+  // FY fields as read-only for AM
+  const fyDisplay=selAcc?`<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid #f0f3f8">
+<div class="fg"><label class="fl">FY 26–27 AB (Acres)</label><div class="ro-box">${selAcc.fy2627AB||'—'}</div></div>
+<div class="fg"><label class="fl">FY 26–27 FF (Acres)</label><div class="ro-box">${selAcc.fy2627FF||'—'}</div></div>
+<div class="fg"><label class="fl">Est. Peak Potential (Acres)</label><div class="ro-box">${selAcc.estimatedPeakPotential||'—'}</div></div>
+<div class="fg"><label class="fl">Account Importance</label><div class="ro-box">${selAcc.accountImportance||'—'}</div></div>
+</div>`:'';
+
+  if(isA()){
+    // Admin: show profile card only — AM connect is in Account Records
+    return`<div class="g2"><div>${profileCard}</div><div class="card"><div class="ctitle">Admin Quick Actions</div>
+<div style="display:flex;flex-direction:column;gap:8px">
+<button class="abtn abtn-blue" onclick="PAGE='account-entry';R()">Manage Account Records</button>
+<button class="abtn" style="background:#3aaa5e;color:#fff;padding:7px 16px" onclick="PAGE='analytics';R()">View Analytics &amp; Pie Chart</button>
+<button class="abtn" style="background:#9b59b6;color:#fff;padding:7px 16px" onclick="PAGE='reports';R()">Audit &amp; Reports</button>
+</div></div></div>`;
+  }
+
+  const amConnectCard=!myAccs.length?`<div class="card"><div style="text-align:center;padding:28px;color:var(--muted)">No accounts assigned to you yet.</div></div>`:`<div class="card">
+<div class="ctitle">AM Connect Updates</div>
+<div style="font-size:11px;color:var(--muted);margin-bottom:12px">Select an account and stage to update dates and action items. Each stage stores its own data independently.</div>
+<div class="fg" style="margin-bottom:12px"><label class="fl">Account</label>
+<select id="sel-am-account" onchange="SEL_ACC=this.value;R()" style="max-width:100%">
+<option value="">— Select Account —</option>
+${myAccs.map(a=>`<option value="${a.id}"${SEL_ACC===a.id?' selected':''}>${a.companyName} (${a.accountGroup||'—'})</option>`).join('')}
+</select></div>
+${!selAcc?`<div style="text-align:center;padding:18px;color:var(--muted);font-size:12px">Select an account above</div>`:`
+${canPartner('viewAccountOverview')?`<div style="background:#f4f6fb;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px">
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+<div><span style="color:var(--muted)">Group:</span> <strong>${selAcc.accountGroup||'—'}</strong></div>
+<div><span style="color:var(--muted)">Priority:</span> <strong>${selAcc.accountPriority||'—'}</strong></div>
+<div><span style="color:var(--muted)">Status:</span> <span class="pill ${sc(selAcc.overallStatus)}" style="font-size:10px">${selAcc.overallStatus}</span></div>
+</div>
+${selAcc.adminActionItem?`<div style="margin-top:7px;padding-top:7px;border-top:1px solid var(--border)"><span style="color:#e65100;font-weight:700;font-size:10px">&#128221; Admin Task:</span> ${selAcc.adminActionItem}</div>`:''}
+${fyDisplay}
+</div>`:''}
+<div class="fg" style="margin-bottom:12px"><label class="fl">Stage</label>
+<select id="sel-am-stage" onchange="onStageSelect('${selAcc.id}')" style="max-width:100%">
+${AM_STAGES.map(s=>`<option value="${s}">${s}${getSDStage(selAcc.id,s)?' ✓':''}</option>`).join('')}
+</select>
+<div style="font-size:10px;color:var(--muted);margin-top:3px">&#9432; Stages can be set in any order. Admin can override freely. ✓ means data exists.</div>
+</div>
+<div class="fg2">
+<div class="fg"><label class="fl">AM Connect Date</label><input type="date" id="f-am-connect-date" value="${selSD?.connectDate||''}" max="${today()}"></div>
+<div class="fg"><label class="fl">Next Connect Date</label><input type="date" id="f-am-next-date" value="${selSD?.nextConnectDate||''}"></div>
+</div>
+${selSD?.nextConnectDate&&odD(selSD.nextConnectDate)>0?`<div class="od-disp" style="margin-bottom:10px">+${odD(selSD.nextConnectDate)} days overdue on next connect</div>`:''}
+<div style="margin-top:10px">
+<div class="divlbl">Action Items <span style="font-weight:400;font-size:10px;color:var(--muted)">— Item 1 always visible. Add up to 5 total. Empty items excluded from reports.</span></div>
+<div id="ai-wrapper">${buildStageActionItems(selSD)}</div>
+</div>
+<div style="display:flex;gap:9px;margin-top:14px">
+<button class="abtn abtn-blue" onclick="saveMyStageData('${selAcc.id}')">Save Stage Data</button>
+<button class="abtn-sm btn-ghost" style="padding:6px 12px;font-size:12px" onclick="SEL_ACC=null;R()">Cancel</button>
+</div>`}
+</div>
+<div class="card" style="margin-top:0"><div class="ctitle">My Stage Summary</div>
+<div class="tscroll"><table style="min-width:500px"><thead><tr><th>Account</th><th>Stage</th><th>Connect Date</th><th>Next Connect</th><th>OD</th><th>Action Items</th></tr></thead>
+<tbody>${myAccs.flatMap(a=>getSD(a.id).map(sd=>{const od=odD(sd.nextConnectDate);const filled=sd.actionItems.filter(i=>i.text);return`<tr><td><strong style="font-size:12px">${a.companyName}</strong></td><td style="font-size:11px">${sd.stage}</td><td style="font-size:11px">${fmtD(sd.connectDate)}</td><td style="font-size:11px">${fmtD(sd.nextConnectDate)}</td><td>${od>0?`<span class="oday">+${od}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td><td style="font-size:11px">${filled.length?filled.map((i,n)=>`<span style="color:var(--muted)">${n+1}.</span> ${i.text}`).join('<br>'):'<span style="color:var(--muted);font-style:italic">No items filled</span>'}</td></tr>`;})).join('')||`<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--muted)">No stage data yet. Select an account above to get started.</td></tr>`}
+</tbody></table></div></div>`;
+
+  return`<div class="g2"><div>${profileCard}</div><div>${amConnectCard}</div></div>`;
+}
 
 /* ─────────────────────────── MODAL ─────────────────────────── */
 function mH(){
@@ -1209,97 +1278,69 @@ function mH(){
 function openM(t,id=null){MODAL={type:t,id};R();}
 function closeM(){MODAL=null;R();}
 
-function selCSAM(el, val){
-  SEL_CS_AM = val;
-  EDIT_UNLOCKED = {initial:false, trials:false};
-  document.querySelectorAll('#am-stage-pills .csp').forEach(b=>{b.classList.toggle('sel', b.dataset.stage===val);});
-  const box = document.getElementById('am-action-items-box');
-  const exAM = SEL_ACC ? getAM(SEL_ACC) : null;
-  if(box) box.innerHTML = buildStageActionItems(exAM, val);
-  _restoreStageDates(exAM, val, 'f-acd', 'f-ncd', 'od-disp');
-}
-function selCSAdmin(el, val){
-  SEL_CS_ADMIN = val;
-  EDIT_UNLOCKED = {initial:false, trials:false};
-  document.querySelectorAll('#admin-stage-pills .csp').forEach(b=>{b.classList.toggle('sel', b.dataset.stage===val);});
-  const accId = window._aSel||'';
-  const exAM = accId ? getAM(accId) : null;
-  const box = document.getElementById('admin-action-items-box');
-  if(box) box.innerHTML = buildStageActionItems(exAM, val);
-  _restoreStageDates(exAM, val, 'fa-acd', 'fa-ncd', 'od-disp-admin');
-}
-function _restoreStageDates(exAM, stage, acdId, ncdId, odId){
-  if(!exAM) return;
-  const stageDateMap = {'Initial connect':exAM.initialDate||'','Trials connect':exAM.trialsDate||'','Business connect':exAM.businessDate||''};
-  const stageConnectDate = stageDateMap[stage]||'';
-  const nextDate = exAM.nextConnectDateDM||'';
-  const acd = document.getElementById(acdId);
-  const ncd = document.getElementById(ncdId);
-  if(acd) acd.value = stageConnectDate;
-  if(ncd) ncd.value = nextDate;
-  calcODById(nextDate, odId);
-}
-function calcODById(val, elId){
-  const el=document.getElementById(elId);
-  if(!el)return;
-  const od=odD(val);
-  el.textContent=val?(od>0?`+${od} days overdue`:'On track — not overdue'):'Enter next connect date';
-}
+/* Legacy AM stage selection helpers — kept for any remaining references */
+function selCSAM(el,val){onStageSelect(SEL_ACC);}
+function selCSAdmin(el,val){onAdminStageSelect(window._aSel||'');}
+function calcODById(val,elId){const el=document.getElementById(elId);if(!el)return;const od=odD(val);el.textContent=val?(od>0?`+${od} days overdue`:'On track — not overdue'):'Enter next connect date';}
 function calcOD(val){calcODById(val,'od-disp');}
 function calcODAdmin(val){calcODById(val,'od-disp-admin');}
+function toggleEditUnlock(){}  /* removed — no longer needed with per-stage data */
+/* Legacy save functions — redirect to new stage data system */
+async function saveAMUpdate(accId){sal('Please use My Account to update stage data.','ai',3000);}
+async function saveAMUpdateAdmin(accId){sal('Please use Account Records AM Connect section.','ai',3000);}
 
-function toggleEditUnlock(el, stageIdx){
-  const stage = stageIdx===0 ? 'initial' : 'trials';
-  EDIT_UNLOCKED[stage] = !EDIT_UNLOCKED[stage];
-  const amBox = document.getElementById('am-action-items-box');
-  const adminBox = document.getElementById('admin-action-items-box');
-  if(amBox){const exAM = SEL_ACC ? getAM(SEL_ACC) : null;amBox.innerHTML = buildStageActionItems(exAM, SEL_CS_AM);}
-  if(adminBox){const accId = window._aSel||'';const exAM = accId ? getAM(accId) : null;adminBox.innerHTML = buildStageActionItems(exAM, SEL_CS_ADMIN);}
-}
 
-async function _doSaveAM(accId, exId, isAdmin){
-  const cs = isAdmin ? SEL_CS_ADMIN : SEL_CS_AM;
-  const acd=document.getElementById(isAdmin?'fa-acd':'f-acd')?.value||'';
-  const ncd=document.getElementById(isAdmin?'fa-ncd':'f-ncd')?.value||'';
-  const acc=DB.accounts.find(a=>a.id===accId);
-  const prev=DB.amUpdates.find(x=>x.id===exId)||{};
-  if(!acd&&!ncd&&!cs)return sal('Please select a stage or enter at least one date','ae');
-  const initAI  = document.getElementById('f-init-ai')   ? document.getElementById('f-init-ai').value   : (prev.initialActionItem||'');
-  const trialsAI= document.getElementById('f-trials-ai') ? document.getElementById('f-trials-ai').value : (prev.trialsActionItem||'');
-  const biz1    = document.getElementById('f-biz1')      ? document.getElementById('f-biz1').value      : (prev.bizAction1||'');
-  const biz2    = document.getElementById('f-biz2')      ? document.getElementById('f-biz2').value      : (prev.bizAction2||'');
-  const biz3    = document.getElementById('f-biz3')      ? document.getElementById('f-biz3').value      : (prev.bizAction3||'');
-  const stageDate=acd||today();
-  const row={
-    id:exId||uid(),account_id:accId,partner_id:CU.id,connect_stage:cs,
-    action_item: cs==='Business connect'?[biz1,biz2,biz3].filter(Boolean).join(' | '):cs==='Trials connect'?trialsAI:initAI,
-    initial_action_item:initAI,trials_action_item:trialsAI,biz_action_1:biz1,biz_action_2:biz2,biz_action_3:biz3,
-    connect_date_dm:acd||null,next_connect_date_dm:ncd||null,
-    initial_date:  cs==='Initial connect'?(acd||stageDate):(prev.initialDate||null),
-    trials_date:   cs==='Trials connect' ?(acd||stageDate):(prev.trialsDate||null),
-    business_date: cs==='Business connect'?(acd||stageDate):(prev.businessDate||null),
-    updated_at:new Date().toISOString()
-  };
-  const{error}=await SB.from('pt_am_updates').upsert([row]);
+async function saveMyStageData(accountId){
+  const stage=document.getElementById('sel-am-stage')?.value;
+  if(!stage)return sal('Please select a stage','ae');
+  const cd=document.getElementById('f-am-connect-date')?.value||null;
+  const ncd=document.getElementById('f-am-next-date')?.value||null;
+  if(cd&&ncd&&ncd<cd)return sal('Warning: Next Connect Date is before Connect Date','ae');
+  const items=collectAI();
+  const row={account_id:accountId,stage,connect_date:cd||null,next_connect_date:ncd||null,action_items:items,updated_at:new Date().toISOString()};
+  const{error}=await SB.from('pt_stage_data').upsert([row],{onConflict:'account_id,stage'});
   if(error)return sal('Error: '+error.message,'ae');
-  const name=acc?.companyName||accId;
-  if(cs!==prev.connectStage)await sbLog('Updated Connect Stage',name,'connectStage',prev.connectStage||'',cs,{accountId:accId});
-  if(acd!==(prev.connectDateDM||''))await sbLog('Updated Connect Date',name,'connectDateDM',prev.connectDateDM||'',acd,{accountId:accId});
-  if(ncd!==(prev.nextConnectDateDM||''))await sbLog('Updated Next Connect Date',name,'nextConnectDateDM',prev.nextConnectDateDM||'',ncd,{accountId:accId});
-  if(initAI!==(prev.initialActionItem||''))await sbLog('Updated Initial Action Item',name,'initialActionItem',prev.initialActionItem||'',initAI,{accountId:accId});
-  if(trialsAI!==(prev.trialsActionItem||''))await sbLog('Updated Trials Action Item',name,'trialsActionItem',prev.trialsActionItem||'',trialsAI,{accountId:accId});
-  if(biz1!==(prev.bizAction1||''))await sbLog('Updated Business Action 1',name,'bizAction1',prev.bizAction1||'',biz1,{accountId:accId});
-  if(biz2!==(prev.bizAction2||''))await sbLog('Updated Business Action 2',name,'bizAction2',prev.bizAction2||'',biz2,{accountId:accId});
-  if(biz3!==(prev.bizAction3||''))await sbLog('Updated Business Action 3',name,'bizAction3',prev.bizAction3||'',biz3,{accountId:accId});
-  EDIT_UNLOCKED={initial:false,trials:false};
-  sal('AM Connect saved — visible to all users!','as');
+  const{data:fresh}=await SB.from('pt_stage_data').select('*').eq('account_id',accountId);
+  if(fresh){DB.stageData=DB.stageData.filter(s=>s.accountId!==accountId).concat(fresh.map(mapStageData));}
+  const acc=DB.accounts.find(a=>a.id===accountId);
+  await sbLog('Updated stage data',acc?.companyName||accountId,'stage','',stage,{accountId});
+  sal('Stage data saved!','as');
 }
-async function saveAMUpdate(accId,exId){await _doSaveAM(accId,exId,false);}
-async function saveAMUpdateAdmin(accId,exId){await _doSaveAM(accId,exId,true);}
+
+async function saveAdminStageData(accountId){
+  const stageEl=document.getElementById('sel-admin-stage');
+  const stage=stageEl?.value;
+  if(!stage)return sal('Please select a stage','ae');
+  const cd=document.getElementById('fa-acd')?.value||null;
+  const ncd=document.getElementById('fa-ncd')?.value||null;
+  const items=collectAI();
+  const row={account_id:accountId,stage,connect_date:cd||null,next_connect_date:ncd||null,action_items:items,updated_at:new Date().toISOString()};
+  const{error}=await SB.from('pt_stage_data').upsert([row],{onConflict:'account_id,stage'});
+  if(error)return sal('Error: '+error.message,'ae');
+  const{data:fresh}=await SB.from('pt_stage_data').select('*').eq('account_id',accountId);
+  if(fresh){DB.stageData=DB.stageData.filter(s=>s.accountId!==accountId).concat(fresh.map(mapStageData));}
+  const acc=DB.accounts.find(a=>a.id===accountId);
+  await sbLog('Admin updated stage data',acc?.companyName||accountId,'stage','',stage,{accountId});
+  sal('Stage data saved!','as');
+}
+
+function onAdminStageSelect(accountId){
+  const stage=document.getElementById('sel-admin-stage')?.value;
+  if(!stage)return;
+  const ex=getSDStage(accountId,stage);
+  const cdEl=document.getElementById('fa-acd');
+  const ncdEl=document.getElementById('fa-ncd');
+  if(cdEl)cdEl.value=ex?.connectDate||'';
+  if(ncdEl)ncdEl.value=ex?.nextConnectDate||'';
+  const wrapper=document.getElementById('admin-ai-wrapper');
+  if(wrapper)wrapper.innerHTML=buildStageActionItems(ex);
+}
 
 async function saveAcc(id){
   const cn=(document.getElementById('fa-cn')?.value||'').trim();
   if(!cn)return sal('Company name is required','ae');
+  const existingAcc=id?DB.accounts.find(a=>a.id===id):null;
+  const partnerId=existingAcc?existingAcc.assignedPartnerId:(document.getElementById('fa-p')?.value||'');
   const row={
     id:id||uid(),company_name:cn,company_email:document.getElementById('fa-ce')?.value||'',
     focus_area:document.getElementById('fa-fa')?.value||'',account_group:document.getElementById('fa-ag')?.value||'',
@@ -1307,12 +1348,12 @@ async function saveAcc(id){
     account_priority:document.getElementById('fa-ap')?.value||'',opportunity_category:document.getElementById('fa-oc')?.value||'',
     crop:document.getElementById('fa-cr')?.value||'',stage_id:document.getElementById('fa-st')?.value||'',
     overall_status:document.getElementById('fa-os')?.value||'yellow',
-    assigned_partner_id:document.getElementById('fa-p')?.value||'',
+    assigned_partner_id:partnerId,
     admin_action_item:document.getElementById('fa-aai')?.value||'',
-    trial_stage:document.getElementById('fa-ts')?.value||'',trial_status:document.getElementById('fa-tst')?.value||'yellow',
-    trial_connect_date:document.getElementById('fa-tcd')?.value||null,
-    agri_manager:document.getElementById('fa-am')?.value||'',
-    remarks:document.getElementById('fa-rm')?.value||'',
+    fy_26_27_ab_acres:parseFloat(document.getElementById('fa-ab')?.value)||null,
+    fy_26_27_ff_acres:parseFloat(document.getElementById('fa-ff')?.value)||null,
+    estimated_peak_potential:parseFloat(document.getElementById('fa-ep')?.value)||null,
+    account_importance:document.getElementById('fa-ai')?.value||null,
     updated_at:new Date().toISOString()
   };
   if(!id)row.created_at=new Date().toISOString();
@@ -1325,7 +1366,7 @@ async function saveAcc(id){
   sal(id?'Account updated!':'Account created!','as');
 }
 
-async function delAcc(id){const a=DB.accounts.find(x=>x.id===id);await SB.from('pt_am_updates').delete().eq('account_id',id);await SB.from('pt_accounts').delete().eq('id',id);await sbLog('Deleted account',a?.companyName||id,'','','deleted');window._aSel=null;sal('Account deleted','as');}
+async function delAcc(id){const a=DB.accounts.find(x=>x.id===id);await SB.from('pt_stage_data').delete().eq('account_id',id);await SB.from('pt_am_updates').delete().eq('account_id',id);await SB.from('pt_accounts').delete().eq('id',id);await sbLog('Deleted account',a?.companyName||id,'','','deleted');window._aSel=null;sal('Account deleted','as');}
 async function approveP(id){const p=DB.pendingSignups.find(x=>x.id===id);if(!p)return;await SB.from('pt_users').insert([{id:uid(),name:p.name,email:p.email,password:p.password,role:'partner',status:'active'}]);await SB.from('pt_pending_signups').delete().eq('id',id);await sbLog('Approved partner',p.name,'status','pending','active');sal(`${p.name} approved!`,'as');}
 async function rejectP(id){const p=DB.pendingSignups.find(x=>x.id===id);await SB.from('pt_pending_signups').delete().eq('id',id);sal(`${p?.name||'Request'} rejected`,'as');}
 async function adminRP(id){const np=document.getElementById('mnp')?.value||'',cp=document.getElementById('mcp')?.value||'';if(np.length<8)return sal('Min 8 chars','ae');if(np!==cp)return sal('Passwords do not match','ae');await SB.from('pt_users').update({password:np}).eq('id',id);closeM();sal('Password reset!','as');}
