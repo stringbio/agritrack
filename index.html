@@ -196,11 +196,11 @@ const SEED_AM=[
 ];
 
 /* ─────────────────────────── APP STATE ─────────────────────────── */
-let DB={users:[],accounts:[],amUpdates:[],stageData:[],assignedAI:[],stages:[],dd:{},pendingSignups:[],auditLog:[]};
+let DB={users:[],accounts:[],amUpdates:[],stageData:[],stages:[],dd:{},pendingSignups:[],auditLog:[],assignments:[]};
 let CU=null, PAGE='dashboard', MODAL=null, AL=null,
     FILTERS={status:'',partner:'',stage:'',company:''}, SF={red:false,yellow:false,green:false},
     ATAB='login', RS=1, REMAIL='', SEARCH='', ASGN='', PIDX=0, PSZ=8, RPTP={},
-    SEL_ACC=null;
+    SEL_ACC=null, PIE_SEL=null;
 let EDIT_UNLOCKED = { initial: false, trials: false };
 let SEL_CS_AM    = '';
 let SEL_CS_ADMIN = '';
@@ -326,10 +326,15 @@ function mapStageData(r){
     updatedAt:r.updated_at?r.updated_at.split('T')[0]:today()
   };
 }
-function mapAssignedAI(r){
+function mapAssignment(r){
   return{
-    id:r.id, accountId:r.account_id, stage:r.stage||'',
-    text:r.text||'', assignedTo:r.assigned_to||'', assignedBy:r.assigned_by||'',
+    id:r.id,
+    accountId:r.account_id,
+    stage:r.stage,
+    actionItemIdx:r.action_item_idx,
+    actionItemText:r.action_item_text||'',
+    assignedTo:r.assigned_to||'',
+    assignedBy:r.assigned_by||'',
     status:r.status||'open',
     comments:r.comments||[],
     createdAt:r.created_at?r.created_at.split('T')[0]:today(),
@@ -339,7 +344,7 @@ function mapAssignedAI(r){
 
 /* ─────────────────────────── DB LOAD / SEED ─────────────────────────── */
 async function sbLoad(){
-  const[uR,aR,amR,stR,ddR,pR,auR,sdR,aiR]=await Promise.all([
+  const[uR,aR,amR,stR,ddR,pR,auR,sdR,asR]=await Promise.all([
     SB.from('pt_users').select('*'),
     SB.from('pt_accounts').select('*').order('created_at',{ascending:true}),
     SB.from('pt_am_updates').select('*'),
@@ -348,7 +353,7 @@ async function sbLoad(){
     SB.from('pt_pending_signups').select('*'),
     SB.from('pt_audit_log').select('*').order('created_at',{ascending:false}).limit(200),
     SB.from('pt_stage_data').select('*'),
-    SB.from('pt_assigned_action_items').select('*').order('created_at',{ascending:false}),
+    SB.from('pt_action_item_assignments').select('*').order('created_at',{ascending:false}),
   ]);
   if(uR.data)DB.users=uR.data;
   if(aR.data)DB.accounts=aR.data.map(mapAcc);
@@ -358,7 +363,7 @@ async function sbLoad(){
   if(pR.data)DB.pendingSignups=pR.data;
   if(auR.data)DB.auditLog=auR.data.map(r=>({ts:new Date(r.created_at).toLocaleString('en-IN'),user:r.user_name,role:r.user_role,action:r.action,record:r.record_name,field:r.field_name,oldv:r.old_value||'',newv:r.new_value||''}));
   if(sdR.data)DB.stageData=sdR.data.map(mapStageData);
-  if(aiR.data)DB.assignedAI=aiR.data.map(mapAssignedAI);
+  if(asR.data)DB.assignments=asR.data.map(mapAssignment);
 }
 /* Get all stage data for an account */
 function getSD(accountId){return DB.stageData.filter(s=>s.accountId===accountId);}
@@ -388,7 +393,7 @@ async function bootDB(){
     .on('postgres_changes',{event:'*',schema:'public',table:'pt_pending_signups'},async()=>{const{data}=await SB.from('pt_pending_signups').select('*');if(data){DB.pendingSignups=data;R();}})
     .on('postgres_changes',{event:'*',schema:'public',table:'pt_audit_log'},async()=>{const{data}=await SB.from('pt_audit_log').select('*').order('created_at',{ascending:false}).limit(200);if(data){DB.auditLog=data.map(r=>({ts:new Date(r.created_at).toLocaleString('en-IN'),user:r.user_name,role:r.user_role,action:r.action,record:r.record_name,field:r.field_name,oldv:r.old_value||'',newv:r.new_value||''}));R();}})
     .on('postgres_changes',{event:'*',schema:'public',table:'pt_stage_data'},async()=>{const{data}=await SB.from('pt_stage_data').select('*');if(data){DB.stageData=data.map(mapStageData);R();}})
-    .on('postgres_changes',{event:'*',schema:'public',table:'pt_assigned_action_items'},async()=>{const{data}=await SB.from('pt_assigned_action_items').select('*').order('created_at',{ascending:false});if(data){DB.assignedAI=data.map(mapAssignedAI);R();}})
+    .on('postgres_changes',{event:'*',schema:'public',table:'pt_action_item_assignments'},async()=>{const{data}=await SB.from('pt_action_item_assignments').select('*').order('created_at',{ascending:false});if(data){DB.assignments=data.map(mapAssignment);R();}})
     .subscribe();
 }
 async function sbLog(action,record,field,oldv,newv,extra={}){
@@ -520,37 +525,49 @@ function filtAccs(base){
   if(FILTERS.status)r=r.filter(a=>a.overallStatus===FILTERS.status);
   if(FILTERS.partner)r=r.filter(a=>a.assignedPartnerId===FILTERS.partner);
   if(FILTERS.stage)r=r.filter(a=>a.stageId===FILTERS.stage);
-  if(FILTERS.company)r=r.filter(a=>a.companyName.toLowerCase().includes(FILTERS.company.toLowerCase()));
+  if(FILTERS.company)r=r.filter(a=>a.id===FILTERS.company);
   if(SEARCH)r=r.filter(a=>a.companyName.toLowerCase().includes(SEARCH.toLowerCase())||a.partnerName.toLowerCase().includes(SEARCH.toLowerCase()));
   if(Object.values(SF).some(Boolean))r=r.filter(a=>{const od=a.amOD>0;const ds=!od&&a.am?.nextConnectDateDM&&(new Date(a.am.nextConnectDateDM)-new Date(today()))/86400000<=3;return(SF.red&&od)||(SF.yellow&&ds)||(SF.green&&a.overallStatus==='green');});
   if(ASGN&&ASGN!=='all')r=r.filter(a=>a.assignedPartnerId===ASGN);
   return r;
 }
 
-/* Reusable filter bar — showPartner:bool, clearExtra:string of extra state to reset */
-function filterBar(showPartner,clearExtra){
+/* Reusable filter bar — includes Company Name dropdown */
+function filterBarHTML(showAM, baseAccounts){
+  const accs=baseAccounts||enAccs();
   const pts=DB.users.filter(u=>u.role==='partner');
-  const clear=`FILTERS={status:'',partner:'',stage:'',company:''};${clearExtra||''}R()`;
+  const companyOpts=accs.map(a=>`<option value="${a.id}"${FILTERS.company===a.id?' selected':''}>${a.companyName}</option>`).join('');
   return`<div class="card"><div style="display:flex;gap:9px;flex-wrap:wrap;align-items:flex-end">
-  <div class="tf-g"><div class="tf-l">Account Name</div><input type="text" class="tf-s" placeholder="Search company…" value="${FILTERS.company}" oninput="FILTERS.company=this.value;R()" style="min-width:130px"></div>
   <div class="tf-g"><div class="tf-l">Status</div><select class="tf-s" onchange="FILTERS.status=this.value;R()"><option value="">All</option><option value="red"${FILTERS.status==='red'?' selected':''}>Red</option><option value="yellow"${FILTERS.status==='yellow'?' selected':''}>Yellow</option><option value="green"${FILTERS.status==='green'?' selected':''}>Green</option></select></div>
-  ${showPartner?`<div class="tf-g"><div class="tf-l">Alliance Manager</div><select class="tf-s" onchange="FILTERS.partner=this.value;R()"><option value="">All</option>${pts.map(p=>`<option value="${p.id}"${FILTERS.partner===p.id?' selected':''}>${p.name}</option>`).join('')}</select></div>`:''}
+  ${showAM?`<div class="tf-g"><div class="tf-l">Alliance Manager</div><select class="tf-s" onchange="FILTERS.partner=this.value;R()"><option value="">All</option>${pts.map(p=>`<option value="${p.id}"${FILTERS.partner===p.id?' selected':''}>${p.name}</option>`).join('')}</select></div>`:''}
   <div class="tf-g"><div class="tf-l">Stage</div><select class="tf-s" onchange="FILTERS.stage=this.value;R()"><option value="">All</option>${DB.stages.map(s=>`<option value="${s.id}"${FILTERS.stage===s.id?' selected':''}>${s.name}</option>`).join('')}</select></div>
-  <button class="abtn-sm btn-ghost" style="padding:4px 10px;align-self:flex-end" onclick="${clear}">Clear</button>
+  <div class="tf-g"><div class="tf-l">Company Name</div><select class="tf-s" onchange="FILTERS.company=this.value;R()"><option value="">All</option>${companyOpts}</select></div>
+  <button class="abtn-sm btn-ghost" style="padding:4px 10px;align-self:flex-end" onclick="FILTERS={status:'',partner:'',stage:'',company:''};R()">Clear</button>
 </div></div>`;
 }
 
-function buildStageActionItems(stageData){
+function buildStageActionItems(stageData,accountId,showAssign){
   const items=stageData?.actionItems||[{text:'',permanent:true}];
   const canAdd=items.length<5;
+  const accId=accountId||stageData?.accountId||'';
+  const stage=stageData?.stage||'';
+  // Check if current user can assign (admin or primary account holder)
+  const canAssign=showAssign&&accId&&stage&&(isA()||(accId&&DB.accounts.find(a=>a.id===accId)?.assignedPartnerId===CU.id));
+  const partners=DB.users.filter(u=>u.role==='partner'&&u.id!==CU.id);
+
   let html='<div id="ai-container">';
   items.forEach((item,idx)=>{
     const isFirst=idx===0;
+    // find existing assignment for this item
+    const existingAssign=DB.assignments.find(a=>a.accountId===accId&&a.stage===stage&&a.actionItemIdx===idx);
+    const assignBadge=existingAssign?`<span style="font-size:10px;background:#e8f0fb;color:#1a5276;padding:2px 6px;border-radius:8px;flex-shrink:0" title="Assigned to ${gu(existingAssign.assignedTo).name}">&#128100; ${getDisplayName(gu(existingAssign.assignedTo).name,10)}</span>`:'';
+    const assignBtn=canAssign&&item.text?`<button type="button" class="abtn-sm btn-ghost" onclick="openAssignModal('${accId}','${stage}',${idx},'${(item.text||'').replace(/'/g,"\\'")}')" style="padding:2px 7px;font-size:10px;flex-shrink:0" title="Assign to Alliance Manager">&#128100; Assign</button>`:'';
     html+=`<div class="ai-row" id="ai-row-${idx}" style="display:flex;align-items:center;gap:6px;margin-bottom:7px">
       <span style="font-size:10px;font-weight:700;color:var(--muted);min-width:16px">${idx+1}.</span>
       <input type="text" id="ai-text-${idx}" value="${(item.text||'').replace(/"/g,'&quot;')}"
-             placeholder="${isFirst?'Action item 1 (always visible — optional to fill)':'Action item '+(idx+1)+'…'}"
+             placeholder="${isFirst?'Action item 1 (always visible)':'Action item '+(idx+1)+'…'}"
              style="flex:1;background:#fff">
+      ${assignBadge}${assignBtn}
       ${!isFirst?`<button type="button" class="abtn-sm btn-red" onclick="removeAI(${idx})" style="padding:2px 8px;font-size:10px;flex-shrink:0">✕</button>`:''}
     </div>`;
   });
@@ -604,7 +621,7 @@ function onStageSelect(accountId){
   if(cdEl)cdEl.value=ex?.connectDate||'';
   if(ncdEl)ncdEl.value=ex?.nextConnectDate||'';
   const wrapper=document.getElementById('ai-wrapper');
-  if(wrapper)wrapper.innerHTML=buildStageActionItems(ex);
+  if(wrapper)wrapper.innerHTML=buildStageActionItems(ex,accountId,true);
 }
 
 /* ─────────────────────────── PAGES ─────────────────────────── */
@@ -622,10 +639,18 @@ function pgDash(){
 <div class="kcard kc-g"><div class="klbl">Green</div><div class="knum">${grn}</div><div class="ksub">On track</div></div>
 <div class="kcard kc-p"><div class="klbl">Overdue</div><div class="knum">${od}</div><div class="ksub">AM Connect OD</div></div>
 </div>
-${filterBar(isA(),'PIDX=0;')}
+<div class="card"><div style="display:flex;gap:9px;flex-wrap:wrap;align-items:flex-end">
+  <div class="tf-g"><div class="tf-l">Status</div><select class="tf-s" onchange="FILTERS.status=this.value;R()"><option value="">All</option><option value="red"${FILTERS.status==='red'?' selected':''}>Red</option><option value="yellow"${FILTERS.status==='yellow'?' selected':''}>Yellow</option><option value="green"${FILTERS.status==='green'?' selected':''}>Green</option></select></div>
+  ${isA()?`<div class="tf-g"><div class="tf-l">Alliance Manager</div><select class="tf-s" onchange="FILTERS.partner=this.value;R()"><option value="">All</option>${pts.map(p=>`<option value="${p.id}"${FILTERS.partner===p.id?' selected':''}>${p.name}</option>`).join('')}</select></div>`:''}
+  <div class="tf-g"><div class="tf-l">Stage</div><select class="tf-s" onchange="FILTERS.stage=this.value;R()"><option value="">All</option>${DB.stages.map(s=>`<option value="${s.id}"${FILTERS.stage===s.id?' selected':''}>${s.name}</option>`).join('')}</select></div>
+  <button class="abtn-sm btn-ghost" style="padding:4px 10px;align-self:flex-end" onclick="FILTERS={status:'',partner:'',stage:''};R()">Clear</button>
+</div></div>
 <div class="card"><div class="ctitle">Accounts Overview</div>
 <div class="tscroll"><table style="min-width:500px"><thead><tr><th>Account</th>${isA()?'<th>Alliance Manager</th>':''}<th>Stage</th><th>Status</th><th>AM Connect</th><th>OD</th></tr></thead>
 <tbody>${f.slice(0,8).map(a=>`<tr><td><strong>${a.companyName}</strong><div style="font-size:10px;color:var(--muted)">${a.accountGroup}</div></td>${isA()?`<td style="font-size:11px">${a.partnerName}</td>`:''}<td style="font-size:11px">${a.stageName}</td><td><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green'}</span></td><td style="font-size:11px">${a.am?.connectStage||'<span style="color:var(--muted)">Not updated</span>'}</td><td>${a.amOD>0?`<span class="oday">+${a.amOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td></tr>`).join('')}</tbody></table></div></div>
+<div style="display:flex;gap:10px;justify-content:center;margin-top:4px">
+${isA()?`<button class="abtn abtn-blue" onclick="PAGE='account-entry';R()">Manage Account Records</button>`:''}</div>
+${filterBarHTML(isA(),myAll)}
 <div class="g3" style="margin-top:14px">
   <div class="card" style="padding:14px"><div class="ctitle">Pipeline Stage Distribution</div><div style="position:relative;height:170px"><canvas id="stageBar"></canvas></div></div>
   <div class="card" style="padding:14px"><div class="ctitle">Connect Stage Progress</div>
@@ -679,7 +704,8 @@ function pgOverallDash(){
     <div id="pie-detail-panel-ov" style="display:none;margin-top:8px"></div>
   </div>
 </div>
-${filterBar(true,'PIDX=0;')}
+${filterBarHTML(true,all)}
+
 <div class="card"><div class="ctitle">All Accounts</div>
 <div class="tscroll"><table style="min-width:600px"><thead><tr><th>Account</th><th>Alliance Manager</th><th>Group</th><th>Stage</th><th>Status</th><th>Importance</th><th>OD</th></tr></thead>
 <tbody>${f.map(a=>`<tr><td><strong>${a.companyName}</strong></td><td style="font-size:11px">${a.partnerName}</td><td style="font-size:11px">${a.accountGroup||'—'}</td><td style="font-size:11px">${a.stageName}</td><td><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green'}</span></td><td style="font-size:11px">${a.accountImportance||'—'}</td><td>${a.amOD>0?`<span class="oday">+${a.amOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td></tr>`).join('')}</tbody></table></div></div>`;
@@ -725,33 +751,11 @@ function pgMyAccs(){
   ${selSD?.nextConnectDate&&odD(selSD.nextConnectDate)>0?`<div class="od-disp" style="margin-bottom:10px">+${odD(selSD.nextConnectDate)} days overdue</div>`:''}
   <div style="margin-top:10px">
     <div class="divlbl">Action Items <span style="font-weight:400;font-size:10px;color:var(--muted)">— 1 always shown, up to 5 max, empty fields excluded from reports</span></div>
-    <div id="ai-wrapper">${buildStageActionItems(selSD)}</div>
+    <div id="ai-wrapper">${buildStageActionItems(selSD,selAcc.id,true)}</div>
   </div>
   <div style="display:flex;gap:9px;margin-top:14px">
     <button class="abtn abtn-blue" onclick="saveMyStageData('${selAcc.id}')">Save Stage Data</button>
   </div>
-  ${selAcc.assignedPartnerId===CU.id?`
-  <div style="margin-top:16px;padding-top:12px;border-top:1px solid #f0f3f8">
-    <div class="divlbl">&#128203; Assign Action Item to Another Alliance Manager</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:10px">As primary account holder, you can delegate tasks to other AMs.</div>
-    <div class="fg"><label class="fl">Action Item *</label><textarea id="aai-text-am" placeholder="Describe the task…" style="min-height:56px"></textarea></div>
-    <div class="fg2">
-      <div class="fg"><label class="fl">Assign To *</label><select id="aai-assignee-am"><option value="">— Select AM —</option>${DB.users.filter(u=>u.role==='partner'&&u.id!==CU.id).map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select></div>
-      <div class="fg"><label class="fl">Stage</label><select id="aai-stage-am"><option value="">None</option>${AM_STAGES.map(s=>`<option value="${s}">${s}</option>`).join('')}</select></div>
-    </div>
-    <button class="abtn abtn-blue" onclick="createAssignedAI_AM('${selAcc.id}')">Assign Action Item</button>
-    ${DB.assignedAI.filter(x=>x.accountId===selAcc.id).length?`<div style="margin-top:12px">
-      <div style="font-size:11px;font-weight:700;margin-bottom:6px">Assigned Items for this account (${DB.assignedAI.filter(x=>x.accountId===selAcc.id).length})</div>
-      ${DB.assignedAI.filter(x=>x.accountId===selAcc.id).map(ai=>{const assignee=gu(ai.assignedTo).name||'—';const sc2={open:'#e6a817',['in-progress']:'#4a7ec7',closed:'#3aaa5e'};const sl={open:'Open',['in-progress']:'In Progress',closed:'Closed'};return`<div style="border:1px solid var(--border);border-radius:7px;padding:9px;margin-bottom:7px;background:${ai.status==='closed'?'#f4f6fb':'#fff'}">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-          <span style="font-size:12px;font-weight:600">${ai.text}</span>
-          <span style="background:${sc2[ai.status]||'#7a8499'};color:#fff;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700">${sl[ai.status]||ai.status}</span>
-        </div>
-        <div style="font-size:10px;color:var(--muted)">Assigned to: <strong>${assignee}</strong> &middot; ${ai.stage||'—'} &middot; ${ai.createdAt}</div>
-        ${ai.comments.length?`<div style="font-size:11px;background:#f4f6fb;border-radius:5px;padding:5px 8px;margin-top:5px">${ai.comments.slice(-1).map(c=>`<strong>${c.userName}</strong>: ${c.text}`).join('')}</div>`:''}
-      </div>`;}).join('')}
-    </div>`:''}
-  </div>`:''}
   <div class="divlbl" style="margin-top:16px">All Stage Summary</div>
   <div class="tscroll"><table style="min-width:400px"><thead><tr><th>Stage</th><th>Connect Date</th><th>Next Connect</th><th>OD</th><th>Items</th></tr></thead>
   <tbody>${AM_STAGES.map(s=>{const sd=getSDStage(selAcc.id,s);if(!sd)return`<tr><td style="color:var(--muted);font-size:11px">${s}</td><td colspan="4" style="color:var(--muted);font-size:10px">No data yet</td></tr>`;const od=odD(sd.nextConnectDate);const filled=sd.actionItems.filter(i=>i.text);return`<tr><td style="font-size:11px;font-weight:600">${s}</td><td style="font-size:11px">${fmtD(sd.connectDate)}</td><td style="font-size:11px">${fmtD(sd.nextConnectDate)}</td><td>${od>0?`<span class="oday">+${od}d</span>`:'<span style="color:#3aaa5e;font-size:10px">OK</span>'}</td><td style="font-size:10px">${filled.length?filled.map(i=>i.text).join(', ').slice(0,40)+'…':'—'}</td></tr>`;}).join('')}
@@ -836,13 +840,9 @@ function adminAMSection(sid){
   const hasData=stageDataForAcc.length>0;
   let selStage=document.getElementById('sel-admin-stage')?.value||AM_STAGES[0];
   const existing=getSDStage(sid,selStage);
-  const partners=DB.users.filter(u=>u.role==='partner');
-  const accAI=DB.assignedAI.filter(x=>x.accountId===sid);
-  const statusBadge=s=>({open:'#e6a817',['in-progress']:'#4a7ec7',closed:'#3aaa5e'})[s]||'#7a8499';
-  const statusLabel=s=>({open:'Open',['in-progress']:'In Progress',closed:'Closed'})[s]||s;
   return `<div class="card" style="margin-top:10px">
 <div class="sh sh-am">AM Connect Stages <span style="font-size:11px;font-weight:500;margin-left:3px">(Admin — all stages, free override)</span></div>
-${hasData?`<div class="infob" style="margin-bottom:10px">This account has data in ${stageDataForAcc.length} stage(s).</div>`:''}
+${hasData?`<div class="infob" style="margin-bottom:10px">This account has data in ${stageDataForAcc.length} stage(s). Saving below will upsert for the selected stage.</div>`:''}
 <div class="fg" style="margin-bottom:10px">
   <label class="fl">Select Stage to Edit</label>
   <select id="sel-admin-stage" onchange="onAdminStageSelect('${sid}')" style="max-width:300px">
@@ -854,41 +854,11 @@ ${hasData?`<div class="infob" style="margin-bottom:10px">This account has data i
   <div class="fg"><label class="fl">Next Connect Date</label><input type="date" id="fa-ncd" value="${existing?.nextConnectDate||''}"></div>
 </div>
 <div style="margin-top:10px">
-  <div class="divlbl">Stage Action Items <span style="font-weight:400;font-size:10px;color:var(--muted)">— 1 always present, up to 5 max</span></div>
-  <div id="admin-ai-wrapper">${buildStageActionItems(existing)}</div>
+  <div class="divlbl">Action Items <span style="font-weight:400;font-size:10px;color:var(--muted)">— 1 always present, up to 5 max</span></div>
+  <div id="admin-ai-wrapper">${buildStageActionItems(existing,sid,true)}</div>
 </div>
 <button class="abtn abtn-blue" style="margin-top:12px" onclick="saveAdminStageData('${sid}')">Save Stage Data</button>
-</div>
-<div class="card" style="margin-top:10px">
-<div class="sh sh-ov">&#128203; Assign Action Item to Alliance Manager</div>
-<div class="fg3" style="margin-top:8px">
-  <div class="fg full"><label class="fl">Action Item Description *</label><textarea id="aai-text" placeholder="Describe the action to be taken…" style="min-height:60px"></textarea></div>
-  <div class="fg"><label class="fl">Assign To (AM) *</label>
-    <select id="aai-assignee"><option value="">— Select AM —</option>
-      ${partners.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}
-    </select>
-  </div>
-  <div class="fg"><label class="fl">Stage Context</label>
-    <select id="aai-stage"><option value="">None</option>${AM_STAGES.map(s=>`<option value="${s}">${s}</option>`).join('')}</select>
-  </div>
-</div>
-<button class="abtn abtn-blue" style="margin-top:8px" onclick="createAssignedAI('${sid}')">Assign Action Item</button>
-${accAI.length?`<div style="margin-top:14px;padding-top:10px;border-top:1px solid #f0f3f8">
-  <div class="divlbl" style="margin-bottom:8px">Existing Assigned Items (${accAI.length})</div>
-  ${accAI.map(ai=>{const assignee=gu(ai.assignedTo).name||'—';const assigner=gu(ai.assignedBy).name||'—';return`<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;background:${ai.status==='closed'?'#f4f6fb':'#fff'}">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
-      <div style="font-size:12px;font-weight:600;flex:1">${ai.text}</div>
-      <div style="display:flex;gap:5px;align-items:center;margin-left:10px">
-        <span style="background:${statusBadge(ai.status)};color:#fff;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700">${statusLabel(ai.status)}</span>
-        ${ai.status!=='closed'?`<button class="abtn-sm btn-red" style="padding:2px 7px;font-size:10px" onclick="closeAssignedAI('${ai.id}')">Close</button>`:''}
-      </div>
-    </div>
-    <div style="font-size:10px;color:var(--muted);margin-bottom:6px">Assigned to: <strong>${assignee}</strong> &middot; By: ${assigner} &middot; ${ai.stage||'No stage'} &middot; ${ai.createdAt}</div>
-    ${ai.comments.length?`<div style="background:#f4f6fb;border-radius:6px;padding:7px 9px;font-size:11px">${ai.comments.slice(-2).map(c=>`<div style="margin-bottom:3px"><strong>${c.userName}</strong>: ${c.text}</div>`).join('')}</div>`:''}
-  </div>`;}).join('')}
-</div>`:''}
-</div>`;
-}
+</div>`;}
 
 function pgFU(){
   const all=filtAccs(),myAll=isA()?enAccs():enAccs().filter(a=>a.assignedPartnerId===CU.id);
@@ -996,7 +966,6 @@ function drawCH(){
   if(pieEl)drawAcresPie(pieEl);
 }
 
-let PIE_SEL=null;
 const PIE_COLORS=['#4a7ec7','#3aaa5e','#e6a817','#e74c3c','#9b59b6','#1abc9c','#f39c12','#2980b9','#27ae60','#c0392b','#8e44ad','#16a085','#d35400','#2c3e50','#7f8c8d','#e91e63','#00bcd4','#8bc34a','#ff5722','#607d8b'];
 function hexToRgba(hex,alpha){const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},${alpha})`;}
 
@@ -1347,6 +1316,158 @@ async function dlProgressCSV(){
 }
 
 /* ─────────────────────────── ADMIN PANEL ─────────────────────────── */
+/* ─────────────────────────── ACTION ITEMS DASHBOARD ─────────────────────────── */
+function pgActionItems(){
+  // Show items assigned to current user
+  const myItems=DB.assignments.filter(a=>a.assignedTo===CU.id);
+  const open=myItems.filter(a=>a.status==='open').length;
+  const inProg=myItems.filter(a=>a.status==='in_progress').length;
+  const closed=myItems.filter(a=>a.status==='closed').length;
+
+  if(!myItems.length)return`<div style="font-size:17px;font-weight:700;margin-bottom:4px">Action Items</div>
+<div class="card" style="text-align:center;padding:40px">
+  <div style="font-size:36px;margin-bottom:10px">&#128203;</div>
+  <div style="font-size:14px;font-weight:600;color:var(--muted)">No action items assigned to you yet.</div>
+  <div style="font-size:12px;color:var(--muted);margin-top:6px">When an Admin or Account Holder assigns an action item to you, it will appear here.</div>
+</div>`;
+
+  const statusColor={open:'#e6a817',in_progress:'#4a7ec7',closed:'#3aaa5e'};
+  const statusLabel={open:'Open',in_progress:'In Progress',closed:'Closed'};
+
+  return`<div style="font-size:17px;font-weight:700;margin-bottom:4px">Action Items</div>
+<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Action items assigned to you across all accounts.</div>
+<div class="krow" style="margin-bottom:14px">
+<div class="kcard kc-y"><div class="klbl">Open</div><div class="knum">${open}</div><div class="ksub">Needs action</div></div>
+<div class="kcard kc-b"><div class="klbl">In Progress</div><div class="knum">${inProg}</div><div class="ksub">Working on</div></div>
+<div class="kcard kc-g"><div class="klbl">Closed</div><div class="knum">${closed}</div><div class="ksub">Completed</div></div>
+</div>
+${myItems.map(item=>{
+  const acc=DB.accounts.find(a=>a.id===item.accountId);
+  const assignedBy=gu(item.assignedBy);
+  const sColor=statusColor[item.status]||'#7a8499';
+  const sLabel=statusLabel[item.status]||item.status;
+  return`<div class="card" style="border-left:4px solid ${sColor};margin-bottom:10px">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+    <div>
+      <div style="font-size:14px;font-weight:800;color:#1a1a2e">${acc?.companyName||'—'}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">
+        ${acc?.accountGroup||'—'} &middot; Stage: <strong>${item.stage}</strong> &middot; Item #${item.actionItemIdx+1}
+      </div>
+      <div style="font-size:11px;margin-top:3px;color:var(--muted)">
+        Assigned by: <strong>${assignedBy.name||'—'}</strong> &middot; ${fmtD(item.createdAt)}
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+      <span style="background:${sColor};color:#fff;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700">${sLabel}</span>
+      <span style="font-size:10px;color:var(--muted)">Updated: ${fmtD(item.updatedAt)}</span>
+    </div>
+  </div>
+  <div style="background:#f4f6fb;border-radius:7px;padding:10px 12px;margin-bottom:10px">
+    <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Action Item</div>
+    <div style="font-size:13px;color:#1a1a2e;font-weight:600">${item.actionItemText||'—'}</div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    ${item.status!=='in_progress'?`<button class="abtn-sm btn-blue" style="padding:4px 10px" onclick="updateAssignmentStatus('${item.id}','in_progress')">&#9654; Mark In Progress</button>`:''}
+    ${item.status!=='closed'?`<button class="abtn-sm btn-grn" style="padding:4px 10px" onclick="updateAssignmentStatus('${item.id}','closed')">&#10003; Close Item</button>`:''}
+    ${item.status==='closed'?`<button class="abtn-sm btn-ghost" style="padding:4px 10px" onclick="updateAssignmentStatus('${item.id}','open')">&#8635; Reopen</button>`:''}
+  </div>
+  <div>
+    <div style="font-size:11px;font-weight:700;color:#1a1a2e;margin-bottom:7px">Comments & Updates (${(item.comments||[]).length})</div>
+    ${(item.comments||[]).map(c=>`<div style="padding:7px 10px;background:${c.userId===CU.id?'#e8f0fb':'#f4f6fb'};border-radius:7px;margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+        <strong style="font-size:11px;color:${c.userId===CU.id?'#1a5276':'#2d3748'}">${c.userName}</strong>
+        <span style="font-size:10px;color:var(--muted)">${c.ts}</span>
+      </div>
+      <div style="font-size:12px;color:#2d3748">${c.text}</div>
+    </div>`).join('')}
+    <div style="display:flex;gap:7px;margin-top:8px">
+      <input type="text" id="ai-comment-${item.id}" placeholder="Add a comment or update…" style="flex:1;background:#fff;font-size:12px">
+      <button class="abtn abtn-blue" style="padding:6px 12px;font-size:12px" onclick="addAIComment('${item.id}')">Post</button>
+    </div>
+  </div>
+</div>`;
+}).join('')}`;
+}
+
+/* ─────────────────────────── ASSIGNMENT MODAL ─────────────────────────── */
+function openAssignModal(accountId,stage,itemIdx,itemText){
+  const acc=DB.accounts.find(a=>a.id===accountId);
+  const partners=DB.users.filter(u=>u.role==='partner'&&u.id!==acc?.assignedPartnerId);
+  const existing=DB.assignments.find(a=>a.accountId===accountId&&a.stage===stage&&a.actionItemIdx===itemIdx);
+
+  MODAL={type:'assign-ai',html:`<div style="font-size:16px;font-weight:700;margin-bottom:4px">Assign Action Item</div>
+<div style="font-size:11px;color:var(--muted);margin-bottom:14px">${acc?.companyName||'—'} &middot; Stage: ${stage} &middot; Item #${itemIdx+1}</div>
+<div style="background:#f4f6fb;border-radius:7px;padding:10px 12px;margin-bottom:14px">
+  <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:4px">Action Item Text</div>
+  <div style="font-size:13px;font-weight:600;color:#1a1a2e">${itemText||'—'}</div>
+</div>
+${existing?`<div style="background:#fff8f0;border:1px solid #ffcc80;border-radius:7px;padding:8px 11px;margin-bottom:12px;font-size:12px">Currently assigned to <strong>${gu(existing.assignedTo).name}</strong>. Saving will reassign.</div>`:''}
+<div class="fg" style="margin-bottom:12px">
+  <label class="fl">Assign To Alliance Manager</label>
+  <select id="assign-to-sel">
+    <option value="">— Select Alliance Manager —</option>
+    ${partners.map(p=>`<option value="${p.id}"${existing?.assignedTo===p.id?' selected':''}>${p.name}</option>`).join('')}
+  </select>
+</div>
+<div style="display:flex;gap:9px">
+  <button class="abtn abtn-blue" onclick="confirmAssignAI('${accountId}','${stage}',${itemIdx},'${itemText.replace(/'/g,"\\'")}','${existing?.id||''}')">Assign</button>
+  <button class="abtn-sm btn-ghost" style="padding:6px 12px" onclick="closeM()">Cancel</button>
+</div>`};
+  R();
+}
+
+async function confirmAssignAI(accountId,stage,itemIdx,itemText,existingId){
+  const assignTo=document.getElementById('assign-to-sel')?.value;
+  if(!assignTo)return sal('Please select an Alliance Manager','ae');
+  const row={
+    id:existingId||uid(),
+    account_id:accountId,
+    stage,
+    action_item_idx:itemIdx,
+    action_item_text:itemText,
+    assigned_to:assignTo,
+    assigned_by:CU.id,
+    status:'open',
+    comments:[],
+    updated_at:new Date().toISOString()
+  };
+  if(!existingId)row.created_at=new Date().toISOString();
+  const{error}=await SB.from('pt_action_item_assignments').upsert([row]);
+  if(error)return sal('Error: '+error.message,'ae');
+  const{data:fresh}=await SB.from('pt_action_item_assignments').select('*').order('created_at',{ascending:false});
+  if(fresh)DB.assignments=fresh.map(mapAssignment);
+  const acc=DB.accounts.find(a=>a.id===accountId);
+  await sbLog('Assigned action item',acc?.companyName||accountId,'action_item','',gu(assignTo).name,{accountId});
+  closeM();
+  sal('Action item assigned to '+gu(assignTo).name+'!','as');
+}
+
+async function updateAssignmentStatus(assignId,newStatus){
+  const{error}=await SB.from('pt_action_item_assignments').update({status:newStatus,updated_at:new Date().toISOString()}).eq('id',assignId);
+  if(error)return sal('Error: '+error.message,'ae');
+  const item=DB.assignments.find(a=>a.id===assignId);
+  if(item)item.status=newStatus;
+  sal('Status updated to '+newStatus.replace('_',' '),'as');
+  R();
+}
+
+async function addAIComment(assignId){
+  const inp=document.getElementById('ai-comment-'+assignId);
+  const txt=(inp?.value||'').trim();
+  if(!txt)return sal('Enter a comment first','ae');
+  const item=DB.assignments.find(a=>a.id===assignId);
+  if(!item)return;
+  const newComment={userId:CU.id,userName:CU.name,text:txt,ts:nowTs()};
+  const newComments=[...(item.comments||[]),newComment];
+  const{error}=await SB.from('pt_action_item_assignments').update({comments:newComments,updated_at:new Date().toISOString()}).eq('id',assignId);
+  if(error)return sal('Error: '+error.message,'ae');
+  item.comments=newComments;
+  item.updatedAt=today();
+  if(inp)inp.value='';
+  sal('Comment posted!','as');
+  R();
+}
+
 function pgAdmin(){
   if(!isA())return'<div style="text-align:center;padding:40px;color:var(--muted)">Access denied</div>';
   const pts=DB.users.filter(u=>u.role==='partner'),adms=DB.users.filter(u=>u.role==='admin'),dd=DB.dd;
@@ -1379,76 +1500,6 @@ function pgAdmin(){
    - For admins: Analytics tab → Alliance Manager Activity Summary */
 function pgProgress(){PAGE='myaccount';R();return'';}
 function pgAdminProgress(){PAGE='analytics';R();return'';}
-
-
-function pgActionItems(){
-  const myItems=DB.assignedAI.filter(x=>x.assignedTo===CU.id);
-  const statusColor={open:'#e6a817',['in-progress']:'#4a7ec7',closed:'#3aaa5e'};
-  const statusLabel={open:'Open',['in-progress']:'In Progress',closed:'Closed'};
-  const filterSt=window._aiFilter||'';
-  const filtered=filterSt?myItems.filter(x=>x.status===filterSt):myItems;
-
-  if(!myItems.length) return`<div style="font-size:17px;font-weight:700;margin-bottom:4px">Action Items</div>
-<div class="card" style="text-align:center;padding:40px;color:var(--muted)">
-  <div style="font-size:32px;margin-bottom:10px">&#128203;</div>
-  <div style="font-size:14px;font-weight:600;margin-bottom:6px">No Action Items Assigned</div>
-  <div style="font-size:12px">When an Admin or primary Account Holder assigns you a task, it will appear here.</div>
-</div>`;
-
-  return`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-  <div>
-    <div style="font-size:17px;font-weight:700;margin-bottom:2px">Action Items</div>
-    <div style="font-size:12px;color:var(--muted)">Tasks assigned to you by Admin or primary account holders.</div>
-  </div>
-  <div style="display:flex;gap:6px;flex-wrap:wrap">
-    ${['','open','in-progress','closed'].map(s=>`<button onclick="window._aiFilter='${s}';R()" style="padding:4px 12px;border-radius:14px;font-size:11px;font-weight:700;border:1px solid ${filterSt===s?'#4a7ec7':'var(--border)'};background:${filterSt===s?'#4a7ec7':'#fff'};color:${filterSt===s?'#fff':'var(--muted)'};cursor:pointer">${s===''?'All '+myItems.length:statusLabel[s]||s+' '+myItems.filter(x=>x.status===s).length}</button>`).join('')}
-  </div>
-</div>
-${filtered.length===0?`<div class="card" style="text-align:center;padding:28px;color:var(--muted)">No ${statusLabel[filterSt]||''} items.</div>`:''}
-${filtered.map(ai=>{
-  const acc=DB.accounts.find(a=>a.id===ai.accountId)||{};
-  const assignedBy=gu(ai.assignedBy).name||'—';
-  const stage=ai.stage||'—';
-  const am=gu(acc.assignedPartnerId).name||'—';
-  const accStage=gs(acc.stageId).name||'—';
-  const col=statusColor[ai.status]||'#7a8499';
-  return`<div class="card" style="border-left:4px solid ${col};margin-bottom:10px">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-    <div>
-      <div style="font-size:14px;font-weight:800;color:#1a1a2e;margin-bottom:3px">${ai.text}</div>
-      <div style="font-size:11px;color:var(--muted)">Assigned by <strong>${assignedBy}</strong> &middot; ${ai.createdAt}</div>
-    </div>
-    <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
-      <select onchange="updateAIStatus('${ai.id}',this.value)" style="font-size:11px;padding:3px 7px;border-radius:6px;border:1px solid var(--border);background:#fff">
-        ${['open','in-progress','closed'].map(s=>`<option value="${s}"${ai.status===s?' selected':''}>${statusLabel[s]}</option>`).join('')}
-      </select>
-    </div>
-  </div>
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;padding:9px;background:#f4f6fb;border-radius:7px;font-size:11px">
-    <div><div style="color:var(--muted);font-size:10px;margin-bottom:2px">Company</div><strong>${acc.companyName||'—'}</strong></div>
-    <div><div style="color:var(--muted);font-size:10px;margin-bottom:2px">Account Group</div><strong>${acc.accountGroup||'—'}</strong></div>
-    <div><div style="color:var(--muted);font-size:10px;margin-bottom:2px">Primary AM</div><strong>${am}</strong></div>
-    <div><div style="color:var(--muted);font-size:10px;margin-bottom:2px">Account Stage</div><strong>${accStage}</strong></div>
-    <div><div style="color:var(--muted);font-size:10px;margin-bottom:2px">Action Stage</div><strong>${stage}</strong></div>
-    <div><div style="color:var(--muted);font-size:10px;margin-bottom:2px">Priority</div><strong>${acc.accountPriority||'—'}</strong></div>
-  </div>
-  ${ai.comments.length?`<div style="margin-bottom:10px">
-    <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Comments (${ai.comments.length})</div>
-    <div style="max-height:120px;overflow-y:auto">${ai.comments.map(c=>`<div style="display:flex;gap:8px;margin-bottom:7px;align-items:flex-start">
-      <div style="width:24px;height:24px;border-radius:50%;background:#4a7ec7;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${(c.userName||'?').slice(0,1)}</div>
-      <div style="flex:1;background:#f4f6fb;border-radius:7px;padding:6px 9px">
-        <div style="font-size:10px;font-weight:700;color:#1a1a2e">${c.userName} <span style="font-weight:400;color:var(--muted)">&middot; ${c.createdAt||''}</span></div>
-        <div style="font-size:12px;margin-top:2px">${c.text}</div>
-      </div>
-    </div>`).join('')}</div>
-  </div>`:''}
-  <div style="display:flex;gap:8px;align-items:flex-end">
-    <div style="flex:1"><input type="text" id="ai-comment-${ai.id}" placeholder="Add a comment or update…" style="width:100%"></div>
-    <button class="abtn abtn-blue" style="padding:6px 14px;flex-shrink:0" onclick="addAIComment('${ai.id}')">Post</button>
-    ${ai.status!=='closed'?`<button class="abtn-sm btn-red" style="padding:6px 12px" onclick="closeAssignedAI('${ai.id}')">Close</button>`:''}
-  </div>
-</div>`;}).join('')}`;
-}
 
 
 function pgMyAcc(){
@@ -1501,69 +1552,6 @@ ${!isA()?`<div class="card">
 }
 
 
-/* ─────────────────────────── ASSIGNED ACTION ITEMS ─────────────────────────── */
-async function createAssignedAI(accountId){
-  const text=(document.getElementById('aai-text')?.value||'').trim();
-  const assignedTo=document.getElementById('aai-assignee')?.value||'';
-  const stage=document.getElementById('aai-stage')?.value||'';
-  if(!text)return sal('Please enter an action item description','ae');
-  if(!assignedTo)return sal('Please select an Alliance Manager to assign to','ae');
-  const row={id:'_'+Math.random().toString(36).substr(2,9),account_id:accountId,stage:stage||null,
-    text,assigned_to:assignedTo,assigned_by:CU.id,status:'open',comments:[],
-    created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
-  const{error}=await SB.from('pt_assigned_action_items').insert([row]);
-  if(error)return sal('Error: '+error.message,'ae');
-  DB.assignedAI.unshift(mapAssignedAI(row));
-  const acc=DB.accounts.find(a=>a.id===accountId);
-  await sbLog('Assigned action item',acc?.companyName||accountId,'action_item','',gu(assignedTo).name,{accountId});
-  document.getElementById('aai-text').value='';
-  document.getElementById('aai-assignee').value='';
-  sal('Action item assigned successfully!','as');
-}
-async function createAssignedAI_AM(accountId){
-  const text=(document.getElementById('aai-text-am')?.value||'').trim();
-  const assignedTo=document.getElementById('aai-assignee-am')?.value||'';
-  const stage=document.getElementById('aai-stage-am')?.value||'';
-  if(!text)return sal('Please enter an action item description','ae');
-  if(!assignedTo)return sal('Please select an Alliance Manager','ae');
-  const row={id:'_'+Math.random().toString(36).substr(2,9),account_id:accountId,stage:stage||null,
-    text,assigned_to:assignedTo,assigned_by:CU.id,status:'open',comments:[],
-    created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
-  const{error}=await SB.from('pt_assigned_action_items').insert([row]);
-  if(error)return sal('Error: '+error.message,'ae');
-  DB.assignedAI.unshift(mapAssignedAI(row));
-  const acc=DB.accounts.find(a=>a.id===accountId);
-  await sbLog('AM assigned action item',acc?.companyName||accountId,'action_item','',gu(assignedTo).name,{accountId});
-  document.getElementById('aai-text-am').value='';
-  sal('Action item assigned!','as');
-}
-async function addAIComment(aiId){
-  const inp=document.getElementById('ai-comment-'+aiId);
-  const text=(inp?.value||'').trim();
-  if(!text)return sal('Please enter a comment','ae');
-  const item=DB.assignedAI.find(x=>x.id===aiId);
-  if(!item)return;
-  const comment={userId:CU.id,userName:CU.name,text,createdAt:today()};
-  const newComments=[...item.comments,comment];
-  const{error}=await SB.from('pt_assigned_action_items').update({comments:newComments,updated_at:new Date().toISOString()}).eq('id',aiId);
-  if(error)return sal('Error: '+error.message,'ae');
-  item.comments=newComments;
-  item.updatedAt=today();
-  if(inp)inp.value='';
-  sal('Comment posted','as');
-}
-async function updateAIStatus(aiId,newStatus){
-  const{error}=await SB.from('pt_assigned_action_items').update({status:newStatus,updated_at:new Date().toISOString()}).eq('id',aiId);
-  if(error)return sal('Error: '+error.message,'ae');
-  const item=DB.assignedAI.find(x=>x.id===aiId);
-  if(item)item.status=newStatus;
-  sal('Status updated','as');
-  R();
-}
-async function closeAssignedAI(aiId){
-  await updateAIStatus(aiId,'closed');
-}
-
 async function saveMyStageData(accountId){
   const stage=document.getElementById('sel-am-stage')?.value;
   if(!stage)return sal('Please select a stage','ae');
@@ -1607,7 +1595,7 @@ function onAdminStageSelect(accountId){
   if(cdEl)cdEl.value=ex?.connectDate||'';
   if(ncdEl)ncdEl.value=ex?.nextConnectDate||'';
   const wrapper=document.getElementById('admin-ai-wrapper');
-  if(wrapper)wrapper.innerHTML=buildStageActionItems(ex);
+  if(wrapper)wrapper.innerHTML=buildStageActionItems(ex,accountId,true);
 }
 
 async function saveAcc(id){
