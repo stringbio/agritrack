@@ -440,9 +440,9 @@ async function doSignup(){
    1. Go to https://emailjs.com → free account → create service + template
    2. Template variables: {{to_email}}, {{reset_code}}, {{to_name}}
    3. Fill in your IDs below and set EMAILJS_ENABLED = true              */
-const EMAILJS_PUBLIC_KEY  = '';   // e.g. 'user_abc123'
-const EMAILJS_SERVICE_ID  = '';   // e.g. 'service_xyz'
-const EMAILJS_TEMPLATE_ID = '';   // e.g. 'template_otp'
+const EMAILJS_PUBLIC_KEY  = 'aePIfb26K4ivaozPv';   // e.g. 'user_abc123'
+const EMAILJS_SERVICE_ID  = 'service_pb404ir';   // e.g. 'service_xyz'
+const EMAILJS_TEMPLATE_ID = 'template_t3kscaa';   // e.g. 'template_otp'
 const EMAILJS_ENABLED = EMAILJS_PUBLIC_KEY && EMAILJS_SERVICE_ID && EMAILJS_TEMPLATE_ID;
 if(EMAILJS_ENABLED && typeof emailjs !== 'undefined') emailjs.init(EMAILJS_PUBLIC_KEY);
 
