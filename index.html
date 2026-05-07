@@ -277,7 +277,7 @@ function sal(m,t,d=3500){AL={msg:m,type:t};R();if(d)setTimeout(()=>{AL=null;R();
 function R(){
   if(BOOT)return;
   document.getElementById('root').innerHTML=CU?appH():authH();
-  if(CU&&(PAGE==='analytics'||PAGE==='dashboard'))setTimeout(drawCH,60);
+  if(CU&&(PAGE==='analytics'||PAGE==='dashboard'||PAGE==='overall-dashboard'))setTimeout(drawCH,60);
 }
 
 /* ─────────────────────────── DATA MAPPERS ─────────────────────────── */
@@ -515,8 +515,9 @@ async function doLogout(){CU=null;AL=null;ATAB='login';localStorage.removeItem('
 function appH(){
   let tabs,pgs;
   if(!isA()){
-    tabs=[{id:'dashboard',label:'Dashboard'}];
+    tabs=[{id:'dashboard',label:'My Dashboard'}];
     pgs={dashboard:pgDash()};
+    tabs.push({id:'overall-dashboard',label:'Overall Dashboard'});pgs['overall-dashboard']=pgOverallDash();
     if(canPartner('viewMyAccounts')){tabs.push({id:'my-accounts',label:'My Account Records'});pgs['my-accounts']=pgMyAccs();}
     if(canPartner('viewFollowups')){tabs.push({id:'followups',label:'Follow-Up Tracker'});pgs.followups=pgFU();}
     tabs.push({id:'myaccount',label:'My Account'});pgs.myaccount=pgMyAcc();
@@ -620,12 +621,13 @@ function onStageSelect(accountId){
 /* ─────────────────────────── PAGES ─────────────────────────── */
 function pgDash(){
   const all=enAccs();
-  const myAll=isA()?all:(canPartner('viewAllAccounts')?all:all.filter(a=>a.assignedPartnerId===CU.id));
+  // My Dashboard = only AM's own accounts
+  const myAll=isA()?all:all.filter(a=>a.assignedPartnerId===CU.id);
   const f=filtAccs(myAll);
   const red=myAll.filter(a=>a.overallStatus==='red').length,yel=myAll.filter(a=>a.overallStatus==='yellow').length,grn=myAll.filter(a=>a.overallStatus==='green').length,od=myAll.filter(a=>a.amOD>0).length;
   const pts=DB.users.filter(u=>u.role==='partner');
   return`<div class="krow">
-<div class="kcard kc-b"><div class="klbl">Total Accounts</div><div class="knum">${myAll.length}</div><div class="ksub">Active records</div></div>
+<div class="kcard kc-b"><div class="klbl">${isA()?'Total Accounts':'My Accounts'}</div><div class="knum">${myAll.length}</div><div class="ksub">Active records</div></div>
 <div class="kcard kc-r"><div class="klbl">Red</div><div class="knum">${red}</div><div class="ksub">Needs attention</div></div>
 <div class="kcard kc-y"><div class="klbl">Yellow</div><div class="knum">${yel}</div><div class="ksub">In progress</div></div>
 <div class="kcard kc-g"><div class="klbl">Green</div><div class="knum">${grn}</div><div class="ksub">On track</div></div>
@@ -638,8 +640,8 @@ function pgDash(){
   <button class="abtn-sm btn-ghost" style="padding:4px 10px;align-self:flex-end" onclick="FILTERS={status:'',partner:'',stage:''};R()">Clear</button>
 </div></div>
 <div class="card"><div class="ctitle">Accounts Overview</div>
-<div class="tscroll"><table style="min-width:500px"><thead><tr><th>Account</th>${isA()||canPartner('viewAllAccounts')?'<th>Alliance Manager</th>':''}<th>Stage</th><th>Status</th><th>AM Connect</th><th>OD</th></tr></thead>
-<tbody>${f.slice(0,8).map(a=>`<tr><td><strong>${a.companyName}</strong><div style="font-size:10px;color:var(--muted)">${a.accountGroup}</div></td>${isA()||canPartner('viewAllAccounts')?`<td style="font-size:11px">${a.partnerName}</td>`:''}<td style="font-size:11px">${a.stageName}</td><td><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green'}</span></td><td style="font-size:11px">${a.am?.connectStage||'<span style="color:var(--muted)">Not updated</span>'}</td><td>${a.amOD>0?`<span class="oday">+${a.amOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td></tr>`).join('')}</tbody></table></div></div>
+<div class="tscroll"><table style="min-width:500px"><thead><tr><th>Account</th>${isA()?'<th>Alliance Manager</th>':''}<th>Stage</th><th>Status</th><th>AM Connect</th><th>OD</th></tr></thead>
+<tbody>${f.slice(0,8).map(a=>`<tr><td><strong>${a.companyName}</strong><div style="font-size:10px;color:var(--muted)">${a.accountGroup}</div></td>${isA()?`<td style="font-size:11px">${a.partnerName}</td>`:''}<td style="font-size:11px">${a.stageName}</td><td><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green'}</span></td><td style="font-size:11px">${a.am?.connectStage||'<span style="color:var(--muted)">Not updated</span>'}</td><td>${a.amOD>0?`<span class="oday">+${a.amOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td></tr>`).join('')}</tbody></table></div></div>
 <div style="display:flex;gap:10px;justify-content:center;margin-top:4px">
 ${isA()?`<button class="abtn abtn-blue" onclick="PAGE='account-entry';R()">Manage Account Records</button>`:`<button class="abtn abtn-blue" onclick="PAGE='my-accounts';R()">My Account Records</button>`}</div>
 <div class="g3" style="margin-top:14px">
@@ -650,13 +652,52 @@ ${isA()?`<button class="abtn abtn-blue" onclick="PAGE='account-entry';R()">Manag
     </div>
     <div style="position:relative;height:140px"><canvas id="connectDonut"></canvas></div>
   </div>
-  <div class="card" style="padding:14px"><div class="ctitle">${isA()?'Alliance Manager Progress %':'Account Status Summary'}</div>
-    ${isA()?'<div style="position:relative;height:170px"><canvas id="amLeader"></canvas></div>':function(){const myA=myAll;if(!myA.length)return '<div style="text-align:center;padding:30px;color:var(--muted);font-size:12px">No accounts assigned</div>';return myA.map(function(a){const sd=getSD(a.id);const pct=sd.length>0?Math.round((sd.length/AM_STAGES.length)*100):0;const latestStage=sd.sort((x,y)=>new Date(y.updatedAt)-new Date(x.updatedAt))[0]?.stage||'';const col=pct>=80?'#3aaa5e':pct>=50?'#4a7ec7':pct>=25?'#e6a817':'#e74c3c';return '<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span style="font-weight:600">'+a.companyName+'</span><span style="font-weight:700;color:'+col+'">'+pct+'%</span></div><div style="background:#f0f3f8;border-radius:6px;height:7px;overflow:hidden"><div style="background:linear-gradient(90deg,#c0392b,#e74c3c 20%,#e6a817 33%,#f0c040 50%,#2ecc71 66%,#3aaa5e 100%);height:100%;width:'+pct+'%;border-radius:6px"></div></div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+(latestStage||'Not started')+' &middot; '+sd.length+'/'+AM_STAGES.length+' stages</div></div>';}).join('');}()}
+  <div class="card" style="padding:14px"><div class="ctitle">${isA()?'Alliance Manager Progress %':'My Account Progress'}</div>
+    ${isA()?'<div style="position:relative;height:170px"><canvas id="amLeader"></canvas></div>':function(){const myA=myAll;if(!myA.length)return '<div style="text-align:center;padding:30px;color:var(--muted);font-size:12px">No accounts assigned</div>';return myA.map(function(a){const sd=getSD(a.id);const pct=sd.length>0?Math.round((sd.length/AM_STAGES.length)*100):0;const latestStage=sd.sort((x,y)=>new Date(y.updatedAt)-new Date(x.updatedAt))[0]?.stage||'';const col=pct>=80?'#3aaa5e':pct>=50?'#4a7ec7':pct>=25?'#e6a817':'#e74c3c';return '<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span style="font-weight:600">'+a.companyName+'</span><span style="font-weight:700;color:'+col+'">'+pct+'%</span></div><div style="background:#f0f3f8;border-radius:6px;height:7px;overflow:hidden"><div style="background:linear-gradient(90deg,#c0392b,#e74c3c 20%,#e6a817 33%,#f0c040 50%,#2ecc71 66%,#3aaa5e 100%);height:100%;width:'+pct+'%;border-radius:6px"></div></div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+( latestStage||'Not started')+' &middot; '+sd.length+'/'+AM_STAGES.length+' stages</div></div>';}).join('');}()}
   </div>
 </div>
-<div class="card" style="margin-top:12px"><div class="ctitle">Overdue AM Connects</div>
+<div class="card" style="margin-top:14px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <div>
+      <div class="ctitle" style="margin-bottom:1px">Accounts by Group — Acres Potential</div>
+      <div style="font-size:11px;color:var(--muted)">Click a segment to see breakdown. Data from Est. Peak Potential in Account Records.</div>
+    </div>
+  </div>
+  <div class="g2" style="align-items:start;gap:10px">
+    <div style="position:relative;height:260px"><canvas id="acresPieChart"></canvas></div>
+    <div id="pie-detail-panel" style="display:none;margin-top:8px"></div>
+  </div>
+</div>
+<div class="card" style="margin-top:0"><div class="ctitle">Overdue AM Connects</div>
 ${myAll.filter(a=>a.amOD>0).map(a=>`<div style="padding:7px 10px;border:1px solid #fde8e8;border-radius:7px;background:#fff8f8;margin-bottom:7px;display:flex;justify-content:space-between;align-items:center"><div><strong style="font-size:12px">${a.companyName}</strong><div style="font-size:11px;color:var(--muted)">${a.partnerName} &middot; Next: ${fmtD(a.am?.nextConnectDateDM)}</div></div><span class="oday">+${a.amOD}d</span></div>`).join('')||'<div style="text-align:center;padding:20px;color:var(--muted);font-size:12px">No overdue items</div>'}
 </div>`;}
+
+/* Overall Dashboard — all accounts visible to Alliance Managers */
+function pgOverallDash(){
+  const all=enAccs();
+  const f=filtAccs(all);
+  const red=all.filter(a=>a.overallStatus==='red').length,yel=all.filter(a=>a.overallStatus==='yellow').length,grn=all.filter(a=>a.overallStatus==='green').length,od=all.filter(a=>a.amOD>0).length;
+  const pts=DB.users.filter(u=>u.role==='partner');
+  return`<div style="font-size:15px;font-weight:700;margin-bottom:4px">Overall Dashboard</div>
+<div style="font-size:12px;color:var(--muted);margin-bottom:12px">All accounts across all Alliance Managers.</div>
+<div class="krow">
+<div class="kcard kc-b"><div class="klbl">Total Accounts</div><div class="knum">${all.length}</div><div class="ksub">All records</div></div>
+<div class="kcard kc-r"><div class="klbl">Red</div><div class="knum">${red}</div><div class="ksub">Needs attention</div></div>
+<div class="kcard kc-y"><div class="klbl">Yellow</div><div class="knum">${yel}</div><div class="ksub">In progress</div></div>
+<div class="kcard kc-g"><div class="klbl">Green</div><div class="knum">${grn}</div><div class="ksub">On track</div></div>
+<div class="kcard kc-p"><div class="klbl">Overdue</div><div class="knum">${od}</div><div class="ksub">AM Connect OD</div></div>
+</div>
+<div class="card"><div style="display:flex;gap:9px;flex-wrap:wrap;align-items:flex-end">
+  <div class="tf-g"><div class="tf-l">Status</div><select class="tf-s" onchange="FILTERS.status=this.value;R()"><option value="">All</option><option value="red"${FILTERS.status==='red'?' selected':''}>Red</option><option value="yellow"${FILTERS.status==='yellow'?' selected':''}>Yellow</option><option value="green"${FILTERS.status==='green'?' selected':''}>Green</option></select></div>
+  <div class="tf-g"><div class="tf-l">Alliance Manager</div><select class="tf-s" onchange="FILTERS.partner=this.value;R()"><option value="">All</option>${pts.map(p=>`<option value="${p.id}"${FILTERS.partner===p.id?' selected':''}>${p.name}</option>`).join('')}</select></div>
+  <div class="tf-g"><div class="tf-l">Stage</div><select class="tf-s" onchange="FILTERS.stage=this.value;R()"><option value="">All</option>${DB.stages.map(s=>`<option value="${s.id}"${FILTERS.stage===s.id?' selected':''}>${s.name}</option>`).join('')}</select></div>
+  <button class="abtn-sm btn-ghost" style="padding:4px 10px;align-self:flex-end" onclick="FILTERS={status:'',partner:'',stage:''};R()">Clear</button>
+</div></div>
+<div class="card"><div class="ctitle">All Accounts</div>
+<div class="tscroll"><table style="min-width:600px"><thead><tr><th>Account</th><th>Alliance Manager</th><th>Group</th><th>Stage</th><th>Status</th><th>Importance</th><th>OD</th></tr></thead>
+<tbody>${f.map(a=>`<tr><td><strong>${a.companyName}</strong></td><td style="font-size:11px">${a.partnerName}</td><td style="font-size:11px">${a.accountGroup||'—'}</td><td style="font-size:11px">${a.stageName}</td><td><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green'}</span></td><td style="font-size:11px">${a.accountImportance||'—'}</td><td>${a.amOD>0?`<span class="oday">+${a.amOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td></tr>`).join('')}</tbody></table></div></div>`;
+}
+
 
 function pgMyAccs(){
   if(!canPartner('viewMyAccounts'))return'<div class="card"><div style="text-align:center;padding:40px;color:#e74c3c">&#x26D4; No permission to view accounts.</div></div>';
@@ -864,23 +905,12 @@ function pgAna(){
 <div class="card"><div class="ctitle">Overdue AM Connects by Alliance Manager</div>
 <div style="position:relative;height:${Math.max(180,byP.length*48+60)}px"><canvas id="barC"></canvas></div></div>
 </div>
-<div class="card" style="margin-bottom:12px">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-    <div>
-      <div class="ctitle" style="margin-bottom:2px">Accounts by Group — Acres Potential</div>
-      <div style="font-size:11px;color:var(--muted)">Click a segment to highlight it and view group details. Data from Est. Peak Potential in Account Records.</div>
-    </div>
-    <button class="abtn-sm btn-ghost" style="padding:4px 10px;font-size:11px" onclick="PIE_SEL=null;if(charts.pie){charts.pie.data.datasets[0].backgroundColor=PIE_COLORS.map((_,i)=>PIE_COLORS[i%PIE_COLORS.length]);charts.pie.update();}document.getElementById('pie-detail-panel').style.display='none'">Clear Selection</button>
-  </div>
-  <div class="g2" style="align-items:start">
-    <div style="position:relative;height:320px"><canvas id="acresPieChart"></canvas></div>
-    <div id="pie-detail-panel" style="display:none"></div>
-  </div>
-</div>
 <div class="card"><div class="ctitle">Alliance Manager Activity Summary</div>
 <table><thead><tr><th>Alliance Manager</th><th>Accounts</th><th>Red</th><th>Yellow</th><th>Green</th><th>Stages Updated</th><th>AM Overdue</th></tr></thead>
 <tbody>${DB.users.filter(u=>u.role==='partner').map(p=>{const pa=all.filter(a=>a.assignedPartnerId===p.id);const r=pa.filter(a=>a.overallStatus==='red').length,y=pa.filter(a=>a.overallStatus==='yellow').length,g=pa.filter(a=>a.overallStatus==='green').length,stagesUpd=pa.reduce((s,a)=>s+DB.stageData.filter(sd=>sd.accountId===a.id).length,0),od=pa.filter(a=>a.amOD>0).length;return`<tr><td><strong>${p.name}</strong></td><td>${pa.length}</td><td>${r>0?`<span class="pill p-red" style="font-size:10px">${r}</span>`:'—'}</td><td>${y>0?`<span class="pill p-yellow" style="font-size:10px">${y}</span>`:'—'}</td><td>${g>0?`<span class="pill p-green" style="font-size:10px">${g}</span>`:'—'}</td><td style="font-size:11px">${stagesUpd} stage record${stagesUpd!==1?'s':''}</td><td>${od>0?`<span class="oday">${od}</span>`:'<span style="color:#3aaa5e">0</span>'}</td></tr>`;}).join('')}
-</tbody></table></div>`;}
+</tbody></table></div>`;
+}
+
 
 function drawCH(){
   Object.values(charts).forEach(c=>{try{c.destroy();}catch(e){}});charts={};
@@ -917,7 +947,7 @@ function drawCH(){
     }).filter(d=>d.total>0);
     if(amData.length)charts.am=new Chart(amEl,{type:'bar',data:{labels:amData.map(d=>d.name),datasets:[{data:amData.map(d=>d.avg),backgroundColor:amData.map(d=>d.avg>=66?'#3aaa5e':d.avg>=33?'#4a7ec7':'#e6a817'),borderRadius:6,borderSkipped:false}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%',font:{size:10}}},y:{ticks:{font:{size:10}}}}}});
   }
-  // Pie chart in Analytics page
+  // Pie chart on dashboard
   const pieEl=document.getElementById('acresPieChart');
   if(pieEl)drawAcresPie(pieEl);
 }
@@ -926,130 +956,96 @@ let PIE_SEL=null;
 const PIE_COLORS=['#4a7ec7','#3aaa5e','#e6a817','#e74c3c','#9b59b6','#1abc9c','#f39c12','#2980b9','#27ae60','#c0392b','#8e44ad','#16a085','#d35400','#2c3e50','#7f8c8d','#e91e63','#00bcd4','#8bc34a','#ff5722','#607d8b'];
 function hexToRgba(hex,alpha){const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},${alpha})`;}
 
+let PIE_SEL=null;
+
 function drawAcresPie(el){
   if(charts.pie){try{charts.pie.destroy();}catch(e){}}
   PIE_SEL=null;
+  // Aggregate by account_group + account_importance
   const groups={};
   DB.accounts.forEach(a=>{
     const key=a.accountGroup||'Ungrouped';
-    if(!groups[key])groups[key]={label:key,importance:a.accountImportance||'—',peak:0,ab:0,ff:0,count:0};
-    groups[key].peak+=(a.estimatedPeakPotential||0);
-    groups[key].ab+=(a.fy2627AB||0);
-    groups[key].ff+=(a.fy2627FF||0);
+    if(!groups[key])groups[key]={label:key,importance:a.accountImportance||'—',peak:0,ab:0,ff:0,count:0,accounts:[]};
+    groups[key].peak+=Number(a.estimatedPeakPotential)||0;
+    groups[key].ab+=Number(a.fy2627AB)||0;
+    groups[key].ff+=Number(a.fy2627FF)||0;
     groups[key].count++;
+    groups[key].accounts.push(a.companyName);
     if(a.accountImportance)groups[key].importance=a.accountImportance;
   });
-  // Show ALL groups; sort by peak desc, then by count desc for zero-peak groups
-  const data=Object.values(groups).sort((x,y)=>(y.peak-x.peak)||y.count-x.count);
-  if(!data.length){
-    el.parentElement.innerHTML='<div style="text-align:center;padding:32px;color:var(--muted);font-size:12px">No account groups found.<br>Please populate Account Group and Est. Peak Potential fields in Account Records.</div>';
+  const data=Object.values(groups).filter(d=>d.count>0).sort((x,y)=>y.peak-x.peak);
+  if(!data.length||data.every(d=>d.peak===0)){
+    el.parentElement.innerHTML='<div style="text-align:center;padding:32px;color:var(--muted);font-size:12px">No Estimated Peak Potential data found.<br>Populate this field in Account Records to see the chart.</div>';
     return;
   }
-  // For groups with zero peak, use count as size (1 acre per account) so they're visible
-  const chartValues=data.map(d=>d.peak>0?d.peak:d.count*0.5);
-  const fullColors=data.map((_,i)=>PIE_COLORS[i%PIE_COLORS.length]);
+  const BASE=['#4a7ec7','#3aaa5e','#e6a817','#e74c3c','#9b59b6','#1abc9c','#f39c12','#2980b9','#27ae60','#c0392b','#8e44ad','#16a085','#d35400','#2c3e50','#7f8c8d'];
+  const baseColors=data.map((_,i)=>BASE[i%BASE.length]);
+  function faded(hex){return hex+'4D';}
+  function getBG(sel){return sel===null?baseColors.slice():baseColors.map((c,i)=>i===sel?c:faded(c));}
+  function getBW(sel){return data.map((_,i)=>i===sel?4:1);}
 
   charts.pie=new Chart(el,{
     type:'pie',
     data:{
       labels:data.map(d=>d.label),
       datasets:[{
-        data:chartValues,
-        backgroundColor:[...fullColors],
-        borderWidth:2,
-        borderColor:'#fff',
-        hoverBorderWidth:3,
-        hoverOffset:8
+        data:data.map(d=>d.peak),
+        backgroundColor:getBG(null),
+        borderColor:data.map(()=>'#fff'),
+        borderWidth:1,
+        hoverBorderWidth:3
       }]
     },
     options:{
-      responsive:true,
-      maintainAspectRatio:false,
-      animation:{duration:400},
+      responsive:true,maintainAspectRatio:false,
       plugins:{
         legend:{
           position:'right',
           labels:{
-            font:{size:11},
-            boxWidth:12,
-            padding:8,
-            generateLabels:chart=>{
-              return data.map((d,i)=>({
-                text:`${d.label} (${d.peak>0?d.peak.toFixed(0)+' ac':d.count+' acct'})`,
-                fillStyle:PIE_SEL===null||PIE_SEL===i?fullColors[i]:hexToRgba(fullColors[i],0.25),
-                strokeStyle:'#fff',
-                lineWidth:1,
-                hidden:false,
-                index:i
-              }));
-            }
-          },
-          onClick:(e,item,legend)=>{
-            const idx=item.index;
-            togglePieSlice(data,fullColors,idx);
+            font:{size:11},boxWidth:12,padding:8,
+            generateLabels:chart=>chart.data.labels.map((label,i)=>({
+              text:label.length>16?label.slice(0,15)+'…':label,
+              fillStyle:baseColors[i],
+              strokeStyle:'#fff',lineWidth:1,hidden:false,index:i,
+              fontColor:PIE_SEL!==null&&PIE_SEL!==i?'#c0c0c0':'#1a1a2e'
+            }))
           }
         },
-        tooltip:{
-          callbacks:{
-            label:ctx=>{
-              const d=data[ctx.dataIndex];
-              const tot=data.reduce((s,x)=>s+x.peak,0);
-              const pct=tot>0&&d.peak>0?((d.peak/tot)*100).toFixed(1):'—';
-              return [`${d.label}`,`Peak Potential: ${d.peak.toFixed(1)} Acres${pct!=='—'?' ('+pct+'%)':''}`,`Accounts: ${d.count}`];
-            }
-          }
-        }
+        tooltip:{callbacks:{label:ctx=>{const d=data[ctx.dataIndex];const tot=data.reduce((s,x)=>s+x.peak,0);const pct=tot>0?((d.peak/tot)*100).toFixed(1):'0';return d.label+': '+d.peak.toFixed(1)+' Acres ('+pct+'%)';}}},
       },
-      onClick:(evt,els)=>{
-        if(!els.length){
-          // Clicked empty space — deselect
-          PIE_SEL=null;
-          charts.pie.data.datasets[0].backgroundColor=[...fullColors];
-          charts.pie.update();
-          const p=document.getElementById('pie-detail-panel');
-          if(p)p.style.display='none';
-          return;
+      onClick:(evt,elements)=>{
+        const idx=elements.length?elements[0].index:null;
+        PIE_SEL=(idx!==null&&PIE_SEL===idx)?null:idx;
+        charts.pie.data.datasets[0].backgroundColor=getBG(PIE_SEL);
+        charts.pie.data.datasets[0].borderWidth=getBW(PIE_SEL);
+        charts.pie.update();
+        const panel=document.getElementById('pie-detail-panel');
+        if(panel){
+          if(PIE_SEL!==null){showPieDetail(data[PIE_SEL],baseColors[PIE_SEL]);}
+          else{panel.style.display='none';}
         }
-        togglePieSlice(data,fullColors,els[0].index);
       }
     }
   });
-}
-
-function togglePieSlice(data,fullColors,idx){
-  if(PIE_SEL===idx){
-    // Deselect
-    PIE_SEL=null;
-    charts.pie.data.datasets[0].backgroundColor=[...fullColors];
-    charts.pie.update();
-    const p=document.getElementById('pie-detail-panel');
-    if(p)p.style.display='none';
-  } else {
-    // Select this slice — fade others
-    PIE_SEL=idx;
-    charts.pie.data.datasets[0].backgroundColor=fullColors.map((c,i)=>
-      i===idx ? c : hexToRgba(c,0.2)
-    );
-    charts.pie.update();
-    showPieDetail(data[idx],fullColors[idx]);
-  }
+  // store data ref for use in showPieDetail via closure
+  charts.pie._data=data;
+  charts.pie._colors=baseColors;
 }
 
 function showPieDetail(d,color){
   const p=document.getElementById('pie-detail-panel');
   if(!p)return;
   p.style.display='block';
-  const tot=Object.values(DB.accounts.reduce((g,a)=>{const k=a.accountGroup||'Ungrouped';if(!g[k])g[k]=0;g[k]+=(a.estimatedPeakPotential||0);return g;},{})).reduce((s,v)=>s+v,0);
-  const pct=tot>0&&d.peak>0?((d.peak/tot)*100).toFixed(1):'0';
   p.innerHTML=`<div style="border-left:4px solid ${color};padding:14px 16px;background:#fff;border-radius:8px;border:1px solid var(--border)">
 <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
   <div>
     <div style="font-size:15px;font-weight:800;color:#1a1a2e">${d.label}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:2px">${d.count} account${d.count!==1?'s':''} &middot; Importance: <strong>${d.importance}</strong> &middot; ${pct}% of total</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:2px">${d.count} account${d.count!==1?'s':''}</div>
+    <div style="font-size:11px;margin-top:3px"><span style="color:var(--muted)">Importance:</span> <strong style="color:#1a5276">${d.importance}</strong></div>
   </div>
-  <button onclick="PIE_SEL=null;charts.pie.data.datasets[0].backgroundColor=PIE_COLORS.map((_,i)=>PIE_COLORS[i%PIE_COLORS.length]);charts.pie.update();document.getElementById('pie-detail-panel').style.display='none'" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--muted);line-height:1">&#215;</button>
+  <button onclick="PIE_SEL=null;if(charts.pie){charts.pie.data.datasets[0].backgroundColor=charts.pie._colors.slice();charts.pie.data.datasets[0].borderWidth=charts.pie._colors.map(()=>1);charts.pie.update();}document.getElementById('pie-detail-panel').style.display='none'" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--muted);line-height:1">&#x2715;</button>
 </div>
-<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px">
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-top:4px">
   <div style="background:#e8f0fb;border-radius:8px;padding:12px;text-align:center">
     <div style="font-size:10px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Est. Peak Potential</div>
     <div style="font-size:22px;font-weight:800;color:#4a7ec7">${d.peak.toFixed(1)}</div>
@@ -1066,60 +1062,8 @@ function showPieDetail(d,color){
     <div style="font-size:10px;color:var(--muted)">Acres</div>
   </div>
 </div>
-<div style="margin-top:10px;padding-top:8px;border-top:1px solid #f0f3f8">
-  <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Accounts in this Group</div>
-  <div style="display:flex;flex-wrap:wrap;gap:5px">
-    ${DB.accounts.filter(a=>(a.accountGroup||'Ungrouped')===d.label).map(a=>`<span style="background:#f4f6fb;border:1px solid var(--border);border-radius:12px;padding:2px 9px;font-size:11px">${a.companyName}</span>`).join('')}
-  </div>
-</div></div>`;}
-
-
-/* ─────────────────────────── REPORTS ─────────────────────────── */
-const COLS=[
-  {k:'companyName',l:'Account Name',s:'Overview'},{k:'accountGroup',l:'Account Group',s:'Overview'},
-  {k:'focusArea',l:'Focus Area',s:'Overview'},{k:'programManager',l:'Program Manager',s:'Overview'},
-  {k:'companyType',l:'Company Type',s:'Overview'},{k:'accountPriority',l:'Account Priority',s:'Overview'},
-  {k:'opportunityCategory',l:'Opportunity Category',s:'Overview'},{k:'crop',l:'Crop',s:'Overview'},
-  {k:'stageName',l:'Stage',s:'Overview'},{k:'overallStatus',l:'Overall Status',s:'Overview'},
-  {k:'adminActionItem',l:'Admin Action Item',s:'Overview'},
-  // FY Metrics
-  {k:'fy2627AB',l:'FY 26-27 AB (Acres)',s:'FY Metrics'},
-  {k:'fy2627FF',l:'FY 26-27 FF (Acres)',s:'FY Metrics'},
-  {k:'estimatedPeakPotential',l:'Est. Peak Potential (Acres)',s:'FY Metrics'},
-  {k:'accountImportance',l:'Account Importance',s:'FY Metrics'},
-  // AM Connect (legacy flat structure — kept for backwards compat)
-  {k:'partnerName',l:'Alliance Manager',s:'AM Connect'},
-  {k:'connectStage',l:'Connect Stage (Legacy)',s:'AM Connect'},
-  {k:'connectDateDM',l:'Connect Date (DM)',s:'AM Connect'},
-  {k:'nextConnectDateDM',l:'Next Connect Date (DM)',s:'AM Connect'},
-  {k:'amOD',l:'AM Overdue (days)',s:'AM Connect'},
-  // Stage Data (new structure — filled items only)
-  {k:'stagesUpdated',l:'Stages Updated',s:'Stage Data'},
-  {k:'latestStage',l:'Latest Stage',s:'Stage Data'},
-  {k:'latestActionItem',l:'Latest Action Item',s:'Stage Data'},
-];
-
-function getRV(a){
-  const am=a.am;
-  const stageData=getSD(a.id);
-  const latestSD=stageData.sort((x,y)=>new Date(y.updatedAt)-new Date(x.updatedAt))[0];
-  const latestAI=latestSD?.actionItems?.filter(i=>i.text).map(i=>i.text).join(' | ')||'';
-  return{
-    companyName:a.companyName,accountGroup:a.accountGroup,focusArea:a.focusArea,
-    programManager:a.programManager,companyType:a.companyType,accountPriority:a.accountPriority,
-    opportunityCategory:a.opportunityCategory,crop:a.crop,stageName:gs(a.stageId).name,
-    overallStatus:a.overallStatus,adminActionItem:a.adminActionItem||'',
-    fy2627AB:a.fy2627AB||0,fy2627FF:a.fy2627FF||0,
-    estimatedPeakPotential:a.estimatedPeakPotential||0,
-    accountImportance:a.accountImportance||'',
-    partnerName:gu(a.assignedPartnerId).name,
-    connectStage:am?.connectStage||'',connectDateDM:am?.connectDateDM||'',
-    nextConnectDateDM:am?.nextConnectDateDM||'',amOD:a.amOD||0,
-    stagesUpdated:stageData.length,
-    latestStage:latestSD?.stage||'',
-    latestActionItem:latestAI,
-  };
-}
+${d.accounts&&d.accounts.length?`<div style="margin-top:10px;padding-top:8px;border-top:1px solid #f0f3f8;font-size:11px;color:var(--muted)">${d.accounts.slice(0,5).join(', ')}${d.accounts.length>5?' +'+(d.accounts.length-5)+' more':''}</div>`:''}
+</div>`;}
 
 function pgRep(){
   if(!isA())return'<div style="text-align:center;padding:40px;color:var(--muted)">Access denied</div>';
@@ -1339,93 +1283,53 @@ function pgAdminProgress(){PAGE='analytics';R();return'';}
 
 
 function pgMyAcc(){
-  const initials=CU.name.split(' ').filter(w=>!['dr.','mr.','mrs.','ms.'].includes(w.toLowerCase().replace('.','')||w.toLowerCase())).map(w=>w[0]).join('').slice(0,2)||CU.name.slice(0,2);
-  return`<div style="max-width:520px;margin:0 auto">
+  /* My Account = Profile + Password only.
+     AM Connect updates are in My Account Records (pgMyAccs) */
+  const initials=CU.name.split(' ').filter(w=>!['dr.','mr.','mrs.','ms.'].includes(w.toLowerCase())).map(w=>w[0]).join('').slice(0,2)||CU.name.slice(0,2);
+  return`<div class="g2">
+<div>
 <div class="card">
 <div class="ctitle">My Profile</div>
-<div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;padding:12px;background:#f4f6fb;border-radius:10px">
-  <div class="av ${CU.role==='admin'?'ava':CU.role==='superadmin'?'avs':'avp'}" style="width:48px;height:48px;font-size:16px;flex-shrink:0">${initials}</div>
-  <div><div style="font-size:14px;font-weight:700">${CU.name}</div>
-  <div style="font-size:11px;color:var(--muted);margin-top:1px">${CU.email}</div>
-  <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:#e8f0fb;color:#4a7ec7;margin-top:4px;display:inline-block">${displayRole(CU.role)}</span></div>
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:10px;background:#f4f6fb;border-radius:8px">
+  <div class="av ${CU.role==='admin'?'ava':CU.role==='superadmin'?'avs':'avp'}" style="width:48px;height:48px;font-size:15px;flex-shrink:0">${initials}</div>
+  <div>
+    <div style="font-size:14px;font-weight:700">${CU.name}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:2px">${CU.email}</div>
+    <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:#e8f0fb;color:#4a7ec7;margin-top:4px;display:inline-block">${displayRole(CU.role)}</span>
+  </div>
 </div>
 ${fi('Full Name','men',CU.name)}
 ${fi('Email','mee',CU.email,'email')}
-<button class="abtn abtn-blue" onclick="saveProf()" style="margin-top:4px">Save Changes</button>
+<button class="abtn abtn-blue" onclick="saveProf()">Save Changes</button>
 </div>
 <div class="card" style="margin-top:0">
 <div class="ctitle">Change Password</div>
 ${fi('Current Password','mec','','password')}
 ${fi('New Password (min 8 chars)','men2','','password')}
 ${fi('Confirm New Password','mecf','','password')}
-<button class="abtn abtn-blue" onclick="changePw()" style="margin-top:4px">Update Password</button>
+<button class="abtn abtn-blue" onclick="changePw()">Update Password</button>
 </div>
-${!isA()?`<div class="card" style="margin-top:0">
-<div class="ctitle">Quick Actions</div>
-<div style="display:flex;flex-direction:column;gap:8px">
-  <button class="abtn abtn-blue" onclick="PAGE='my-accounts';R()">My Account Records &amp; AM Connect</button>
-  <button class="abtn" style="background:#3aaa5e;color:#fff;padding:7px 16px" onclick="PAGE='followups';R()">Follow-Up Tracker</button>
 </div>
-</div>`:`<div class="card" style="margin-top:0">
-<div class="ctitle">Admin Quick Actions</div>
+<div>
+${!isA()?`<div class="card">
+<div class="ctitle">Quick Links</div>
 <div style="display:flex;flex-direction:column;gap:8px">
-  <button class="abtn abtn-blue" onclick="PAGE='account-entry';R()">Manage Account Records</button>
-  <button class="abtn" style="background:#3aaa5e;color:#fff;padding:7px 16px" onclick="PAGE='analytics';R()">Analytics &amp; Pie Chart</button>
-  <button class="abtn" style="background:#9b59b6;color:#fff;padding:7px 16px" onclick="PAGE='reports';R()">Reports &amp; Audit</button>
+  <button class="abtn abtn-blue" onclick="PAGE='my-accounts';R()">&#128194; My Account Records &amp; AM Connect</button>
+  <button class="abtn" style="background:#3aaa5e;color:#fff;padding:7px 16px" onclick="PAGE='dashboard';R()">&#128202; My Dashboard</button>
+  <button class="abtn" style="background:#9b59b6;color:#fff;padding:7px 16px" onclick="PAGE='overall-dashboard';R()">&#127758; Overall Dashboard</button>
+  <button class="abtn" style="background:#e6a817;color:#fff;padding:7px 16px" onclick="PAGE='followups';R()">&#128337; Follow-Up Tracker</button>
+</div>
+</div>`:`<div class="card">
+<div class="ctitle">Admin Quick Links</div>
+<div style="display:flex;flex-direction:column;gap:8px">
+  <button class="abtn abtn-blue" onclick="PAGE='account-entry';R()">&#128196; Account Records</button>
+  <button class="abtn" style="background:#3aaa5e;color:#fff;padding:7px 16px" onclick="PAGE='analytics';R()">&#128202; Analytics</button>
+  <button class="abtn" style="background:#9b59b6;color:#fff;padding:7px 16px" onclick="PAGE='reports';R()">&#128202; Reports &amp; Audit</button>
 </div>
 </div>`}
+</div>
 </div>`;
 }
-
-function mH(){
-  if(!MODAL)return'';
-  const{type,id}=MODAL;let c='';
-  const mfi=(l,iid,v='',t='text')=>`<div class="fg"><label class="fl">${l}</label><input type="${t}" id="${iid}" value="${v}"></div>`;
-  if(type==='add-partner'||type==='edit-partner'){const p=id?DB.users.find(x=>x.id===id):null;c=`<div class="mt">${id?'Edit Alliance Manager':'Add Alliance Manager'}</div>${mfi('Full Name *','mn',p?.name||'')}${mfi('Email *','me',p?.email||'','email')}${!id?mfi('Password *','mp','','password'):''}<div class="ma"><button class="abtn-sm btn-ghost" onclick="closeM()">Cancel</button><button class="abtn abtn-blue" style="padding:6px 16px" onclick="savePart('${id||''}')">Save</button></div>`;}
-  else if(type==='add-admin'||type==='edit-admin'){const a=id?DB.users.find(x=>x.id===id):null;c=`<div class="mt">${id?'Edit Admin':'Add Admin'}</div>${mfi('Full Name *','mn',a?.name||'')}${mfi('Email *','me',a?.email||'','email')}${!id?mfi('Password *','mp','','password'):''}<div class="ma"><button class="abtn-sm btn-ghost" onclick="closeM()">Cancel</button><button class="abtn abtn-blue" style="padding:6px 16px" onclick="saveAdm('${id||''}')">Save</button></div>`;}
-  else if(type==='admin-perms'){
-    const a=id?DB.users.find(x=>x.id===id):null;
-    if(!a){c='<div class="mt">User not found</div>';}else{
-    const perms=a.permissions||{...DEFAULT_PERMS};
-    c=`<div class="mt" style="color:#7b1fa2">&#x2699; Permissions — ${a.name}</div>
-    <div class="infob">Control exactly what this admin can see and do.</div>
-    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
-      ${Object.entries(PERM_LABELS).map(([key,label])=>`<label style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;background:${perms[key]?'#f3e5f5':'#fff'}"><div><div style="font-size:12px;font-weight:600">${label}</div></div><input type="checkbox" id="perm-${key}" ${perms[key]?'checked':''} style="width:18px;height:18px;accent-color:#7b1fa2;cursor:pointer"></label>`).join('')}
-    </div>
-    <div style="display:flex;gap:7px;margin-bottom:4px"><button class="abtn-sm" style="background:#7b1fa2;color:#fff;padding:4px 10px" onclick="Object.keys(PERM_LABELS).forEach(k=>{const el=document.getElementById('perm-'+k);if(el)el.checked=true})">Grant All</button><button class="abtn-sm btn-ghost" style="padding:4px 10px" onclick="Object.keys(PERM_LABELS).forEach(k=>{const el=document.getElementById('perm-'+k);if(el)el.checked=false})">Revoke All</button></div>
-    <div class="ma"><button class="abtn-sm btn-ghost" onclick="closeM()">Cancel</button><button class="abtn" style="background:#7b1fa2;color:#fff;padding:6px 16px" onclick="savePerms('${id}')">Save Permissions</button></div>`;}
-  }
-  else if(type==='add-stage'||type==='edit-stage'){const s=id?DB.stages.find(x=>x.id===id):null;c=`<div class="mt">${id?'Edit Stage':'Add Stage'}</div>${mfi('Stage Name *','mn',s?.name||'')}<div class="ma"><button class="abtn-sm btn-ghost" onclick="closeM()">Cancel</button><button class="abtn abtn-blue" style="padding:6px 16px" onclick="saveStg('${id||''}')">Save</button></div>`;}
-  else if(type==='reset-pw'){const u=DB.users.find(x=>x.id===id);c=`<div class="mt">Reset Password — ${u?.name||''}</div><div class="infob">Set a temporary password.</div>${mfi('New Password *','mnp','','password')}${mfi('Confirm *','mcp','','password')}<div class="ma"><button class="abtn-sm btn-ghost" onclick="closeM()">Cancel</button><button class="abtn-sm btn-yel" style="padding:4px 12px" onclick="adminRP('${id}')">Reset</button></div>`;}
-  else if(type==='partner-perms'){
-    const p=id?DB.users.find(x=>x.id===id):null;
-    if(!p){c='<div class="mt">User not found</div>';}else{
-    const pperms=p.partner_permissions||{...DEFAULT_PARTNER_PERMS};
-    const groups=['Navigation','Account Overview','AM Connect','Trials'];
-    const groupColors={'Navigation':'#4a7ec7','Account Overview':'#1a5276','AM Connect':'#0a3d6b','Trials':'#145a32'};
-    const groupBg={'Navigation':'#e8f0fb','Account Overview':'#e8f0fb','AM Connect':'#bdd7f5','Trials':'#d4f5e2'};
-    c=`<div class="mt" style="color:#1e8449">&#x1F511; Partner Access — ${p.name}</div>
-    <div class="infob">Control exactly what this partner can see and do.</div>
-    <div style="display:flex;gap:7px;margin-bottom:12px"><button class="abtn-sm" style="background:#1e8449;color:#fff;padding:4px 10px" onclick="Object.keys(PARTNER_PERM_LABELS).forEach(k=>{const el=document.getElementById('pperm-'+k);if(el)el.checked=true})">Grant All</button><button class="abtn-sm btn-ghost" style="padding:4px 10px" onclick="Object.keys(PARTNER_PERM_LABELS).forEach(k=>{const el=document.getElementById('pperm-'+k);if(el)el.checked=false})">Revoke All</button></div>
-    ${groups.map(grp=>{const grpPerms=Object.entries(PARTNER_PERM_LABELS).filter(([k,v])=>v.group===grp);return`<div style="margin-bottom:14px"><div style="background:${groupBg[grp]};color:${groupColors[grp]};padding:5px 10px;border-radius:6px;font-size:11px;font-weight:700;text-transform:uppercase;margin-bottom:8px">${grp}</div>${grpPerms.map(([key,info])=>`<label style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border:1px solid ${pperms[key]!==false?'#a9dfbf':'var(--border)'};border-radius:8px;cursor:pointer;background:${pperms[key]!==false?'#eafaf1':'#fff'};margin-bottom:6px"><div><div style="font-size:12px;font-weight:600">${info.label}</div><div style="font-size:10px;color:var(--muted)">${info.desc}</div></div><input type="checkbox" id="pperm-${key}" ${pperms[key]!==false?'checked':''} style="width:18px;height:18px;accent-color:#1e8449;cursor:pointer;flex-shrink:0;margin-left:10px"></label>`).join('')}</div>`;}).join('')}
-    <div class="ma"><button class="abtn-sm btn-ghost" onclick="closeM()">Cancel</button><button class="abtn" style="background:#1e8449;color:#fff;padding:6px 16px" onclick="savePartnerPerms('${id}')">Save Access</button></div>`;}
-  }
-  return`<div class="mo" onclick="if(event.target===this)closeM()"><div class="mc">${c}</div></div>`;}
-
-/* ─────────────────────────── UI ACTIONS ─────────────────────────── */
-function openM(t,id=null){MODAL={type:t,id};R();}
-function closeM(){MODAL=null;R();}
-
-/* Legacy AM stage selection helpers — kept for any remaining references */
-function selCSAM(el,val){onStageSelect(SEL_ACC);}
-function selCSAdmin(el,val){onAdminStageSelect(window._aSel||'');}
-function calcODById(val,elId){const el=document.getElementById(elId);if(!el)return;const od=odD(val);el.textContent=val?(od>0?`+${od} days overdue`:'On track — not overdue'):'Enter next connect date';}
-function calcOD(val){calcODById(val,'od-disp');}
-function calcODAdmin(val){calcODById(val,'od-disp-admin');}
-function toggleEditUnlock(){}  /* removed — no longer needed with per-stage data */
-/* Legacy save functions — redirect to new stage data system */
-async function saveAMUpdate(accId){sal('Please use My Account to update stage data.','ai',3000);}
-async function saveAMUpdateAdmin(accId){sal('Please use Account Records AM Connect section.','ai',3000);}
 
 
 async function saveMyStageData(accountId){
