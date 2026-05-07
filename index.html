@@ -619,7 +619,7 @@ ${isA()?`<button class="abtn abtn-blue" onclick="PAGE='account-entry';R()">Manag
 <div class="card" style="margin-top:14px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
     <div>
-      <div class="ctitle" style="margin-bottom:1px">Accounts by Group</div>
+      <div class="ctitle" style="margin-bottom:1px">B2B Accounts</div>
       <div style="font-size:11px;color:var(--muted)">Click any segment to highlight and see detailed metrics. Data from Est. Peak Potential in Account Records.</div>
     </div>
   </div>
@@ -646,6 +646,18 @@ function pgOverallDash(){
 <div class="kcard kc-y"><div class="klbl">Yellow</div><div class="knum">${yel}</div><div class="ksub">In progress</div></div>
 <div class="kcard kc-g"><div class="klbl">Green</div><div class="knum">${grn}</div><div class="ksub">On track</div></div>
 <div class="kcard kc-p"><div class="klbl">Overdue</div><div class="knum">${od}</div><div class="ksub">AM Connect OD</div></div>
+</div>
+<div class="card" style="margin-bottom:14px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <div>
+      <div class="ctitle" style="margin-bottom:1px">B2B Accounts</div>
+      <div style="font-size:11px;color:var(--muted)">Click any segment to highlight and see detailed metrics. Data from Est. Peak Potential in Account Records.</div>
+    </div>
+  </div>
+  <div class="g2" style="align-items:start;gap:10px">
+    <div style="position:relative;height:260px"><canvas id="acresPieChart"></canvas></div>
+    <div id="pie-detail-panel" style="display:none;margin-top:8px"></div>
+  </div>
 </div>
 <div class="card"><div style="display:flex;gap:9px;flex-wrap:wrap;align-items:flex-end">
   <div class="tf-g"><div class="tf-l">Status</div><select class="tf-s" onchange="FILTERS.status=this.value;R()"><option value="">All</option><option value="red"${FILTERS.status==='red'?' selected':''}>Red</option><option value="yellow"${FILTERS.status==='yellow'?' selected':''}>Yellow</option><option value="green"${FILTERS.status==='green'?' selected':''}>Green</option></select></div>
@@ -681,7 +693,13 @@ function pgMyAccs(){
   <div><div style="color:var(--muted)">Focus Area</div><strong>${selAcc.focusArea||'—'}</strong></div>
   <div><div style="color:var(--muted)">Priority</div><strong>${selAcc.accountPriority||'—'}</strong></div>
   <div><div style="color:var(--muted)">Crop</div><strong>${selAcc.crop||'—'}</strong></div>
-  <div><div style="color:var(--muted)">FY AB</div><strong>${selAcc.fy2627AB||'—'}</strong></div>
+  <div><div style="color:var(--muted)">Importance</div><strong>${selAcc.accountImportance||'—'}</strong></div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px;font-size:11px;padding:8px 10px;background:#f4f6fb;border-radius:7px;border-left:3px solid #3aaa5e">
+  <div><div style="color:var(--muted);font-size:10px">Est. Peak Potential</div><strong>${selAcc.estimatedPeakPotential?selAcc.estimatedPeakPotential+' Ac':'—'}</strong></div>
+  <div><div style="color:var(--muted);font-size:10px">FY 26–27 AB</div><strong>${selAcc.fy2627AB?selAcc.fy2627AB+' Ac':'—'}</strong></div>
+  <div><div style="color:var(--muted);font-size:10px">FY 26–27 FF</div><strong>${selAcc.fy2627FF?selAcc.fy2627FF+' Ac':'—'}</strong></div>
+  <div><div style="color:var(--muted);font-size:10px">Group</div><strong>${selAcc.accountGroup||'—'}</strong></div>
   </div>`:''}
   <div class="divlbl" style="margin-top:4px">AM Connect Update</div>
   <div class="fg" style="margin-bottom:10px">
@@ -769,10 +787,10 @@ ${acc?`<div style="font-size:10px;color:var(--muted);margin-top:2px">&#128274; O
 </div>
 <div class="divlbl" style="margin-top:8px">FY 26–27 Metrics <span style="font-weight:400;text-transform:none;font-size:10px;color:var(--muted)">(Admin editable — read-only for Alliance Managers)</span></div>
 <div class="fg4">
+<div class="fg"><label class="fl">Est. Peak Potential (Acres)</label><input type="number" id="fa-ep" step="0.01" min="0" value="${acc?.estimatedPeakPotential||''}"></div>
 <div class="fg"><label class="fl">FY 26–27 AB (Acres)</label><input type="number" id="fa-ab" step="0.01" min="0" value="${acc?.fy2627AB||''}"></div>
 <div class="fg"><label class="fl">FY 26–27 FF (Acres)</label><input type="number" id="fa-ff" step="0.01" min="0" value="${acc?.fy2627FF||''}"></div>
-<div class="fg"><label class="fl">Est. Peak Potential (Acres)</label><input type="number" id="fa-ep" step="0.01" min="0" value="${acc?.estimatedPeakPotential||''}"></div>
-<div class="fg"><label class="fl">Account Importance</label><input type="text" id="fa-ai" placeholder="e.g. High, Strategic…" value="${acc?.accountImportance||''}"></div>
+<div class="fg"><label class="fl">Account Importance</label><select id="fa-ai"><option value="">Select...</option><option value="Focus"${acc?.accountImportance==='Focus'?' selected':''}>Focus</option><option value="Target"${acc?.accountImportance==='Target'?' selected':''}>Target</option></select></div>
 </div>
 <div style="display:flex;gap:9px;margin-top:10px;align-items:center">
 <button class="abtn abtn-blue" onclick="saveAcc('${sid}')">Save Account Record</button>
