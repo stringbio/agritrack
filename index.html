@@ -411,14 +411,18 @@ ${fi('Full Name *','sn')}${fi('Work Email *','se','','email')}${fi('Password *',
 
 function rstH(){
   let body='';
-  if(RS===1)body=`${fi('Registered email','re',REMAIL,'email')}<button class="abtn abtn-blue" style="width:100%;padding:9px" onclick="rs1()">Send Reset Code</button>`;
-  else if(RS===2)body=`${DB._emailSent?`<div class="infob" style="background:#eafaf1;border-color:#a9dfbf;color:#1e8449">&#10003; Reset code sent to <strong>${REMAIL}</strong>. Check your inbox.</div>`:`<div class="infob">Reset code generated for <strong>${REMAIL}</strong>.<br><span style="font-size:10px;color:var(--muted)">(Email sending not configured — code shown below for demo)</span></div><div class="rtok">${DB._rtok||'------'}</div>`}${fi('Enter 6-digit code','rt')}<button class="abtn abtn-blue" style="width:100%;padding:9px" onclick="rs2()">Verify Code</button><div style="text-align:center;margin-top:8px"><button class="blk" style="font-size:11px;color:var(--muted)" onclick="RS=1;REMAIL='';delete DB._rtok;R()">Resend / Use different email</button></div>`;
-  else body=`${fi('New Password','rnp','','password')}${fi('Confirm','rcp','','password')}<button class="abtn abtn-blue" style="width:100%;padding:9px" onclick="rs3()">Set Password</button>`;
+  if(RS===1)body=`${fi('Registered email','re',REMAIL,'email')}<button class="abtn abtn-blue" style="width:100%;padding:9px" onclick="rs1()">Continue</button>`;
+  else body=`<div style="text-align:center;padding:18px 6px">
+<div style="font-size:34px;margin-bottom:10px">&#128274;</div>
+<div style="font-size:14px;font-weight:700;color:#1a1a2e;margin-bottom:8px">Contact Your Administrator</div>
+<div style="font-size:12px;color:#4a5568;line-height:1.8">Self-service password reset is not available.<br>Please contact your <strong>System Administrator</strong><br>to reset the password for:<br><strong style="color:#4a7ec7;font-size:13px">${REMAIL}</strong></div>
+<button class="abtn abtn-blue" style="margin-top:16px;padding:7px 22px" onclick="RS=1;REMAIL='';R()">&#8592; Back</button>
+</div>`;
   return`<div class="abg"><div class="ac">
-<div class="alogo">${LOGO_IMG_AUTH}<h2 style="margin-top:6px">Reset Password</h2><p>Step ${RS} of 3</p></div>
+<div class="alogo">${LOGO_IMG_AUTH}<h2 style="margin-top:6px">Forgot Password</h2></div>
 ${AL?`<div class="alert ${AL.type}">${AL.msg}</div>`:''}
-<div class="steps">${[1,2,3].map(i=>`<div class="step" style="background:${i<=RS?'#4a7ec7':'#dde3ec'}"></div>`).join('')}</div>
-${body}<div style="text-align:center;margin-top:10px"><button class="blk" onclick="ATAB='login';RS=1;R()">Back</button></div>
+${RS===1?`<div class="steps"><div class="step" style="background:#4a7ec7;flex:1"></div></div>`:'' }
+${body}${RS===1?`<div style="text-align:center;margin-top:10px"><button class="blk" onclick="ATAB='login';RS=1;R()">Back to Login</button></div>`:''}
 </div></div>`;}
 
 async function doLogin(){
@@ -440,9 +444,9 @@ async function doSignup(){
    1. Go to https://emailjs.com → free account → create service + template
    2. Template variables: {{to_email}}, {{reset_code}}, {{to_name}}
    3. Fill in your IDs below and set EMAILJS_ENABLED = true              */
-const EMAILJS_PUBLIC_KEY  = 'aePIfb26K4ivaozPv';   // e.g. 'user_abc123'
-const EMAILJS_SERVICE_ID  = 'service_pb404ir';   // e.g. 'service_xyz'
-const EMAILJS_TEMPLATE_ID = 'template_t3kscaa';   // e.g. 'template_otp'
+const EMAILJS_PUBLIC_KEY  = '';   // e.g. 'user_abc123'
+const EMAILJS_SERVICE_ID  = '';   // e.g. 'service_xyz'
+const EMAILJS_TEMPLATE_ID = '';   // e.g. 'template_otp'
 const EMAILJS_ENABLED = EMAILJS_PUBLIC_KEY && EMAILJS_SERVICE_ID && EMAILJS_TEMPLATE_ID;
 if(EMAILJS_ENABLED && typeof emailjs !== 'undefined') emailjs.init(EMAILJS_PUBLIC_KEY);
 
@@ -459,56 +463,12 @@ async function sendResetEmail(email, name, code) {
 
 async function rs1(){
   const e=(document.getElementById('re')?.value||'').trim();
-  if(!e)return sal('Enter email','ae');
-  const user=DB.users.find(u=>u.email===e);
-  if(!user)return sal('No account found with that email','ae');
-  REMAIL=e;
-  const tok=Math.floor(100000+Math.random()*900000).toString();
-  const expiry=new Date(Date.now()+15*60*1000).toISOString();
-  DB._rtok=tok;
-  /* upsert with explicit conflict on 'key' column to avoid duplicate rows */
-  const{error}=await SB.from('pt_settings').upsert(
-    [{key:'reset_'+e, value: JSON.stringify({token:tok, expiry, used:false})}],
-    {onConflict:'key'}
-  );
-  if(error){console.error('Reset upsert error:',error);return sal('Error saving reset code. Try again.','ae');}
-  const emailSent=await sendResetEmail(e, user.name||e, tok);
-  DB._emailSent=emailSent;
-  RS=2;AL=null;R();
+  if(!e)return sal('Enter your registered email','ae');
+  if(!DB.users.find(u=>u.email===e))return sal('No account found with that email','ae');
+  REMAIL=e;RS=2;AL=null;R();
 }
-async function rs2(){
-  const entered=(document.getElementById('rt')?.value||'').trim();
-  if(!entered)return sal('Please enter the reset code','ae');
-  /* In-memory fast-path (same session) */
-  if(DB._rtok && DB._rtok===entered){RS=3;AL=null;R();return;}
-  /* DB verification (handles page refresh / cross-device) */
-  try{
-    const{data,error}=await SB.from('pt_settings').select('*').eq('key','reset_'+REMAIL).maybeSingle();
-    if(error||!data)return sal('No reset request found. Please start over.','ae');
-    const v = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
-    if(!v)return sal('Invalid reset data. Please start over.','ae');
-    if(v.used)return sal('This code has already been used. Please request a new one.','ae');
-    if(new Date(v.expiry)<new Date())return sal('Code expired (15 min limit). Please start over.','ae');
-    if(v.token!==entered)return sal('Invalid code — please check and try again','ae');
-    RS=3;AL=null;R();
-  }catch(err){sal('Verification error. Please try again.','ae');}
-}
-async function rs3(){
-  const np=document.getElementById('rnp')?.value||'',cp=document.getElementById('rcp')?.value||'';
-  if(np.length<8)return sal('Min 8 chars','ae');
-  if(np!==cp)return sal('Passwords do not match','ae');
-  await SB.from('pt_users').update({password:np}).eq('email',REMAIL);
-  /* Mark token used */
-  try{
-    const{data}=await SB.from('pt_settings').select('*').eq('key','reset_'+REMAIL).maybeSingle();
-    if(data){
-      const v=typeof data.value==='string'?JSON.parse(data.value):data.value;
-      await SB.from('pt_settings').update({value:JSON.stringify({...v,used:true})}).eq('key','reset_'+REMAIL);
-    }
-  }catch(e){}
-  ATAB='login';RS=1;REMAIL='';delete DB._rtok;delete DB._emailSent;
-  sal('Password reset successfully! Sign in with your new password.','as',4000);
-}
+async function rs2(){RS=1;REMAIL='';AL=null;R();}
+async function rs3(){}
 async function doLogout(){CU=null;AL=null;ATAB='login';localStorage.removeItem('pt_session');R();}
 
 /* ─────────────────────────── APP SHELL ─────────────────────────── */
@@ -659,8 +619,8 @@ ${isA()?`<button class="abtn abtn-blue" onclick="PAGE='account-entry';R()">Manag
 <div class="card" style="margin-top:14px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
     <div>
-      <div class="ctitle" style="margin-bottom:1px">Accounts by Group — Acres Potential</div>
-      <div style="font-size:11px;color:var(--muted)">Click a segment to see breakdown. Data from Est. Peak Potential in Account Records.</div>
+      <div class="ctitle" style="margin-bottom:1px">Accounts by Group</div>
+      <div style="font-size:11px;color:var(--muted)">Click any segment to highlight and see detailed metrics. Data from Est. Peak Potential in Account Records.</div>
     </div>
   </div>
   <div class="g2" style="align-items:start;gap:10px">
