@@ -1024,6 +1024,50 @@ function showPieDetail(d,color){
 ${d.accounts&&d.accounts.length?`<div style="margin-top:10px;padding-top:8px;border-top:1px solid #f0f3f8;font-size:11px;color:var(--muted)">${d.accounts.slice(0,5).join(', ')}${d.accounts.length>5?' +'+(d.accounts.length-5)+' more':''}</div>`:''}
 </div>`;}
 
+/* ─────────────────────────── REPORTS ─────────────────────────── */
+const COLS=[
+  {k:'companyName',l:'Account Name',s:'Overview'},{k:'accountGroup',l:'Account Group',s:'Overview'},
+  {k:'focusArea',l:'Focus Area',s:'Overview'},{k:'programManager',l:'Program Manager',s:'Overview'},
+  {k:'companyType',l:'Company Type',s:'Overview'},{k:'accountPriority',l:'Account Priority',s:'Overview'},
+  {k:'opportunityCategory',l:'Opportunity Category',s:'Overview'},{k:'crop',l:'Crop',s:'Overview'},
+  {k:'stageName',l:'Stage',s:'Overview'},{k:'overallStatus',l:'Overall Status',s:'Overview'},
+  {k:'adminActionItem',l:'Admin Action Item',s:'Overview'},
+  {k:'fy2627AB',l:'FY 26-27 AB (Acres)',s:'FY Metrics'},
+  {k:'fy2627FF',l:'FY 26-27 FF (Acres)',s:'FY Metrics'},
+  {k:'estimatedPeakPotential',l:'Est. Peak Potential (Acres)',s:'FY Metrics'},
+  {k:'accountImportance',l:'Account Importance',s:'FY Metrics'},
+  {k:'partnerName',l:'Alliance Manager',s:'AM Connect'},
+  {k:'connectStage',l:'Connect Stage (Legacy)',s:'AM Connect'},
+  {k:'connectDateDM',l:'Connect Date (DM)',s:'AM Connect'},
+  {k:'nextConnectDateDM',l:'Next Connect Date (DM)',s:'AM Connect'},
+  {k:'amOD',l:'AM Overdue (days)',s:'AM Connect'},
+  {k:'stagesUpdated',l:'Stages Updated',s:'Stage Data'},
+  {k:'latestStage',l:'Latest Stage',s:'Stage Data'},
+  {k:'latestActionItem',l:'Latest Action Item',s:'Stage Data'},
+];
+
+function getRV(a){
+  const am=a.am;
+  const stageData=getSD(a.id);
+  const latestSD=[...stageData].sort((x,y)=>new Date(y.updatedAt)-new Date(x.updatedAt))[0];
+  const latestAI=latestSD?.actionItems?.filter(i=>i.text).map(i=>i.text).join(' | ')||'';
+  return{
+    companyName:a.companyName,accountGroup:a.accountGroup,focusArea:a.focusArea,
+    programManager:a.programManager,companyType:a.companyType,accountPriority:a.accountPriority,
+    opportunityCategory:a.opportunityCategory,crop:a.crop,stageName:gs(a.stageId).name,
+    overallStatus:a.overallStatus,adminActionItem:a.adminActionItem||'',
+    fy2627AB:a.fy2627AB||0,fy2627FF:a.fy2627FF||0,
+    estimatedPeakPotential:a.estimatedPeakPotential||0,
+    accountImportance:a.accountImportance||'',
+    partnerName:gu(a.assignedPartnerId).name,
+    connectStage:am?.connectStage||'',connectDateDM:am?.connectDateDM||'',
+    nextConnectDateDM:am?.nextConnectDateDM||'',amOD:a.amOD||0,
+    stagesUpdated:stageData.length,
+    latestStage:latestSD?.stage||'',
+    latestActionItem:latestAI,
+  };
+}
+
 function pgRep(){
   if(!isA())return'<div style="text-align:center;padding:40px;color:var(--muted)">Access denied</div>';
   if(!Object.keys(RPTP).length)COLS.forEach(c=>RPTP[c.k]=true);
