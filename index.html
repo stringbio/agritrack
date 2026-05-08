@@ -547,7 +547,163 @@ ${pageContent}
 ${MODAL?`<div class="overlay" onclick="closeM()"><div class="mbox" onclick="event.stopPropagation()">${MODAL.html}</div></div>`:''}`;
 }
 
+/* ─────────────────────────── MODAL SYSTEM ─────────────────────────── */
+function openM(type, id){
+  const u=id?DB.users.find(x=>x.id===id):null;
+  const s=id?DB.stages.find(x=>x.id===id):null;
+  let html='';
+
+  if(type==='add-partner'||type==='edit-partner'){
+    const isEdit=type==='edit-partner';
+    html=`<div style="font-size:15px;font-weight:700;margin-bottom:14px">${isEdit?'Edit':'Add'} Alliance Manager</div>
+<div class="fg" style="margin-bottom:8px"><label class="fl">Full Name</label><input type="text" id="m-name" value="${u?.name||''}" placeholder="Full name"></div>
+<div class="fg" style="margin-bottom:8px"><label class="fl">Email</label><input type="email" id="m-email" value="${u?.email||''}" placeholder="email@example.com"></div>
+${!isEdit?`<div class="fg" style="margin-bottom:8px"><label class="fl">Password</label><input type="password" id="m-pw" placeholder="Min 6 characters"></div>`:''}
+<div class="fg" style="margin-bottom:12px"><label class="fl">Status</label>
+<select id="m-status"><option value="active"${(!u||u.status==='active')?' selected':''}>Active</option><option value="inactive"${u?.status==='inactive'?' selected':''}>Inactive</option></select></div>
+<div style="display:flex;gap:8px">
+<button class="abtn abtn-blue" onclick="saveUser('${isEdit?id:''}','partner')">Save</button>
+<button class="abtn-sm btn-ghost" style="padding:6px 12px" onclick="closeM()">Cancel</button></div>`;
+  }
+  else if(type==='add-admin'||type==='edit-admin'){
+    const isEdit=type==='edit-admin';
+    html=`<div style="font-size:15px;font-weight:700;margin-bottom:14px">${isEdit?'Edit':'Add'} Admin</div>
+<div class="fg" style="margin-bottom:8px"><label class="fl">Full Name</label><input type="text" id="m-name" value="${u?.name||''}" placeholder="Full name"></div>
+<div class="fg" style="margin-bottom:8px"><label class="fl">Email</label><input type="email" id="m-email" value="${u?.email||''}" placeholder="email@example.com"></div>
+${!isEdit?`<div class="fg" style="margin-bottom:8px"><label class="fl">Password</label><input type="password" id="m-pw" placeholder="Min 6 characters"></div>`:''}
+<div class="fg" style="margin-bottom:12px"><label class="fl">Status</label>
+<select id="m-status"><option value="active"${(!u||u.status==='active')?' selected':''}>Active</option><option value="inactive"${u?.status==='inactive'?' selected':''}>Inactive</option></select></div>
+<div style="display:flex;gap:8px">
+<button class="abtn abtn-blue" onclick="saveUser('${isEdit?id:''}','admin')">Save</button>
+<button class="abtn-sm btn-ghost" style="padding:6px 12px" onclick="closeM()">Cancel</button></div>`;
+  }
+  else if(type==='reset-pw'){
+    html=`<div style="font-size:15px;font-weight:700;margin-bottom:6px">Reset Password</div>
+<div style="font-size:12px;color:var(--muted);margin-bottom:14px">Resetting password for: <strong>${u?.name||'—'}</strong></div>
+<div class="fg" style="margin-bottom:8px"><label class="fl">New Password</label><input type="password" id="m-newpw" placeholder="Min 6 characters"></div>
+<div class="fg" style="margin-bottom:12px"><label class="fl">Confirm Password</label><input type="password" id="m-confpw" placeholder="Re-enter password"></div>
+<div style="display:flex;gap:8px">
+<button class="abtn abtn-blue" onclick="doResetPW('${id}')">Reset Password</button>
+<button class="abtn-sm btn-ghost" style="padding:6px 12px" onclick="closeM()">Cancel</button></div>`;
+  }
+  else if(type==='partner-perms'){
+    const pperms=u?.partner_permissions||{};
+    const groups=[...new Set(Object.values(PARTNER_PERM_LABELS).map(v=>v.group))];
+    html=`<div style="font-size:15px;font-weight:700;margin-bottom:4px">Access Permissions</div>
+<div style="font-size:12px;color:var(--muted);margin-bottom:14px">Configure access for <strong>${u?.name||'—'}</strong></div>
+${groups.map(grp=>`<div style="margin-bottom:12px">
+<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid var(--border)">${grp}</div>
+${Object.entries(PARTNER_PERM_LABELS).filter(([,v])=>v.group===grp).map(([k,v])=>`
+<label style="display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;cursor:pointer">
+<input type="checkbox" id="pp-${k}" ${(k in pperms?pperms[k]:DEFAULT_PARTNER_PERMS[k])===false?'':'checked'} style="margin-top:2px;flex-shrink:0">
+<div><div style="font-size:12px;font-weight:600">${v.label}</div><div style="font-size:10px;color:var(--muted)">${v.desc}</div></div>
+</label>`).join('')}
+</div>`).join('')}
+<div style="display:flex;gap:8px;margin-top:4px">
+<button class="abtn abtn-blue" onclick="savePerms('${id}','partner')">Save Permissions</button>
+<button class="abtn-sm btn-ghost" style="padding:6px 12px" onclick="closeM()">Cancel</button></div>`;
+  }
+  else if(type==='admin-perms'){
+    const aperms=u?.permissions||{};
+    html=`<div style="font-size:15px;font-weight:700;margin-bottom:4px">Admin Permissions</div>
+<div style="font-size:12px;color:var(--muted);margin-bottom:14px">Configure permissions for <strong>${u?.name||'—'}</strong></div>
+${Object.entries(PERM_LABELS).map(([k,label])=>`
+<label style="display:flex;align-items:center;gap:8px;margin-bottom:9px;cursor:pointer">
+<input type="checkbox" id="ap-${k}" ${aperms[k]!==false?'checked':''}>
+<span style="font-size:12px">${label}</span>
+</label>`).join('')}
+<div style="display:flex;gap:8px;margin-top:8px">
+<button class="abtn abtn-blue" onclick="savePerms('${id}','admin')">Save Permissions</button>
+<button class="abtn-sm btn-ghost" style="padding:6px 12px" onclick="closeM()">Cancel</button></div>`;
+  }
+  else if(type==='add-stage'||type==='edit-stage'){
+    const isEdit=type==='edit-stage';
+    html=`<div style="font-size:15px;font-weight:700;margin-bottom:14px">${isEdit?'Edit':'Add'} Pipeline Stage</div>
+<div class="fg" style="margin-bottom:12px"><label class="fl">Stage Name</label><input type="text" id="m-sname" value="${s?.name||''}" placeholder="e.g. Negotiation"></div>
+<div style="display:flex;gap:8px">
+<button class="abtn abtn-blue" onclick="saveStage('${isEdit?id:''}')">Save Stage</button>
+<button class="abtn-sm btn-ghost" style="padding:6px 12px" onclick="closeM()">Cancel</button></div>`;
+  }
+
+  MODAL={type,html};
+  R();
+}
+
+async function saveUser(id, role){
+  const name=(document.getElementById('m-name')?.value||'').trim();
+  const email=(document.getElementById('m-email')?.value||'').trim();
+  const pw=document.getElementById('m-pw')?.value||'';
+  const status=document.getElementById('m-status')?.value||'active';
+  if(!name)return sal('Name is required','ae');
+  if(!email)return sal('Email is required','ae');
+  if(!id&&pw.length<6)return sal('Password must be at least 6 characters','ae');
+  // Check email uniqueness
+  const existing=DB.users.find(u=>u.email===email&&u.id!==id);
+  if(existing)return sal('Email already in use by another account','ae');
+  const row={name,email,status,role};
+  if(id){row.id=id;}
+  else{row.id=uid();row.password=pw;row.created_at=new Date().toISOString();}
+  const{error}=await SB.from('pt_users').upsert([row]);
+  if(error)return sal('Error: '+error.message,'ae');
+  await sbLog(id?'Updated user':'Created user',name,'user','',id?'updated':'created');
+  closeM();
+  sal((id?'Updated':'Added')+' '+name+'!','as');
+}
+
+async function doResetPW(id){
+  const np=(document.getElementById('m-newpw')?.value||'').trim();
+  const cp=(document.getElementById('m-confpw')?.value||'').trim();
+  if(np.length<6)return sal('Password must be at least 6 characters','ae');
+  if(np!==cp)return sal('Passwords do not match','ae');
+  const{error}=await SB.from('pt_users').update({password:np}).eq('id',id);
+  if(error)return sal('Error: '+error.message,'ae');
+  const u=DB.users.find(x=>x.id===id);
+  await sbLog('Reset password',u?.name||id,'password','','reset');
+  closeM();
+  sal('Password reset successfully!','as');
+}
+
+async function savePerms(id, role){
+  const u=DB.users.find(x=>x.id===id);
+  if(!u)return sal('User not found','ae');
+  if(role==='partner'){
+    const perms={};
+    Object.keys(PARTNER_PERM_LABELS).forEach(k=>{
+      const el=document.getElementById('pp-'+k);
+      if(el)perms[k]=el.checked;
+    });
+    const{error}=await SB.from('pt_users').update({partner_permissions:perms}).eq('id',id);
+    if(error)return sal('Error: '+error.message,'ae');
+    await sbLog('Updated permissions',u.name,'permissions','','updated');
+  } else {
+    const perms={};
+    Object.keys(PERM_LABELS).forEach(k=>{
+      const el=document.getElementById('ap-'+k);
+      if(el)perms[k]=el.checked;
+    });
+    const{error}=await SB.from('pt_users').update({permissions:perms}).eq('id',id);
+    if(error)return sal('Error: '+error.message,'ae');
+    await sbLog('Updated admin permissions',u.name,'permissions','','updated');
+  }
+  closeM();
+  sal('Permissions saved!','as');
+}
+
+async function saveStage(id){
+  const name=(document.getElementById('m-sname')?.value||'').trim();
+  if(!name)return sal('Stage name is required','ae');
+  const row={name};
+  if(id){row.id=id;}
+  else{row.id=uid();row.sort_order=DB.stages.length+1;}
+  const{error}=await SB.from('pt_stages').upsert([row]);
+  if(error)return sal('Error: '+error.message,'ae');
+  await sbLog(id?'Updated stage':'Added stage',name,'stage','',id?'updated':'created');
+  closeM();
+  sal((id?'Updated':'Added')+' stage: '+name,'as');
+}
+
 function closeM(){MODAL=null;R();}
+
 
 /* ─────────────────────────── DATA HELPERS ─────────────────────────── */
 function enAccs(){return DB.accounts.map(a=>{const am=getAM(a.id);return{...a,am,partnerName:gu(a.assignedPartnerId).name,stageName:gs(a.stageId).name,amOD:am?odD(am.nextConnectDateDM):0};});}
