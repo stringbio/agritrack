@@ -184,7 +184,7 @@ const SEED_DD={
   opportunityCategory:['Bundling','Direct','Partnership','Other'],
   crop:['Rice','Wheat','Corn','Cotton','Soybean','Mustard','Sugarcane','Other'],
   connectStage:['Initial connect','Trials connect','Business connect'],
-  trialStage:['Pre-trial','In-trial','Post-trial','Completed','Yet to initiate','NA'],
+  trialStage:['Pre-trial','In-trial','Post-trial','Completed'],
 };
 const SEED_ACCOUNTS=[
   {id:'ac1',company_name:'Rallis Seed',company_email:'contact@rallis.com',focus_area:'Seeds for scale',account_group:'Tata',program_manager:'Ram',company_type:'Seed Companies',account_priority:'Strategic',opportunity_category:'Bundling',crop:'Rice',stage_id:'s4',overall_status:'yellow',assigned_partner_id:'p3',trial_stage:'Pre-trial',trial_status:'yellow',trial_connect_date:'2026-04-06',agri_manager:'Rajeev',remarks:'Initial contact done',admin_action_item:'Prepare pricing deck and share with AM before next DM meeting'},
@@ -1024,18 +1024,17 @@ function trialsSection(sid){
   const statusColors={red:'#e74c3c',yellow:'#e6a817',green:'#3aaa5e',na:'#7a8499'};
   const sCol=statusColors[tst]||'var(--muted)';
 
-  return `<div class="card" style="margin-bottom:12px;">
+  return `<div class="card" style="margin-bottom:12px;border-left:4px solid #1abc9c">
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-  <div>
-    <span class="sh sh-tr">&#127807; Trials</span>
-    <span style="font-size:11px;color:var(--muted);margin-left:2px">(Trial Details)</span>
+  <div class="sh" style="background:transparent;padding:0;border:none;margin:0;color:#0e7a6e;font-size:13px;font-weight:700">
+    &#127807; Trials <span style="font-size:11px;font-weight:500;color:var(--muted);margin-left:4px">(Trial Details)</span>
   </div>
   ${tst?`<span style="background:${sCol};color:#fff;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700">${tst.charAt(0).toUpperCase()+tst.slice(1)}</span>`:''}
 </div>
 <div class="fg4">
   <div class="fg">
     <label class="fl">Trial Stage</label>
-    ${ddS('tr-stage','trialStage',ts)}
+    <input type="text" id="tr-stage" value="${ts}" placeholder="e.g. In-trial, Pre-trial…">
   </div>
   <div class="fg">
     <label class="fl">Trial Status</label>
@@ -1069,7 +1068,7 @@ function trialsSection(sid){
   </div>
 </div>
 <div style="margin-top:10px">
-  <button class="abtn" style="background:#148f77;color:#fff;padding:6px 14px;font-size:12px;border-color:#148f77" onclick="saveTrials('${sid}')">&#127807; Save Trial Details</button>
+  <button class="abtn" style="background:#1abc9c;color:#fff;padding:6px 14px;font-size:12px" onclick="saveTrials('${sid}')">Save Trial Details</button>
 </div>
 </div>`;
 }
@@ -1104,36 +1103,32 @@ function pgAccEntry(){
   const sid=window._aSel||'';
   const acc=sid?DB.accounts.find(a=>a.id===sid):null;
 
-  /* ── Left sidebar: narrow account list ─────────────────────────────── */
-  const accItems=DB.accounts.map(function(a){
-    const ptnr=gu(a.assignedPartnerId);
-    const tags=[
-      a.focusArea?'<span class="acc-tag">'+a.focusArea+'</span>':'',
-      a.opportunityCategory?'<span class="acc-tag">'+a.opportunityCategory+'</span>':'',
-      a.crop?'<span class="acc-tag" style="background:#eafaf1;color:#1e8449">'+a.crop+'</span>':''
-    ].join('');
-    const isSelected=sid===a.id;
-    return '<div onclick="window._aSel=\''+a.id+'\';SEL_STAGE_ADMIN=\'\';R()" class="acc-list-item'+(isSelected?' selected':'')+'">'
-      +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px">'
-      +'<div style="min-width:0">'
-      +'<div class="acc-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+a.companyName+'</div>'
-      +'<div class="acc-meta">'+ptnr.name+'</div>'
-      +'</div>'
-      +'<span class="pill '+sc(a.overallStatus)+'" style="font-size:9px;flex-shrink:0;padding:1px 6px">'+(a.overallStatus==='red'?'R':a.overallStatus==='yellow'?'Y':'G')+'</span>'
-      +'</div>'
-      +(tags?'<div class="acc-tags">'+tags+'</div>':'')
-      +'</div>';
-  }).join('');
+  /* ── Left sidebar: narrow account list ─────────────── */
+  const sidebar=`<div class="acc-sidebar">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+  <div style="font-size:13px;font-weight:700">Accounts <span style="color:var(--muted);font-weight:400">(${DB.accounts.length})</span></div>
+  <button class="nfbtn" style="padding:4px 9px;font-size:11px" onclick="window._aSel='';R()">+ New</button>
+</div>
+${DB.accounts.map(a=>{
+  const ptnr=gu(a.assignedPartnerId);
+  return`<div onclick="window._aSel='${a.id}';SEL_STAGE_ADMIN='';R()"
+    class="acc-list-item${sid===a.id?' selected':''}">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px">
+    <div style="min-width:0">
+      <div class="acc-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.companyName}</div>
+      <div class="acc-meta">${ptnr.name}</div>
+    </div>
+    <span class="pill ${sc(a.overallStatus)}" style="font-size:9px;flex-shrink:0;padding:1px 6px">${a.overallStatus==='red'?'R':a.overallStatus==='yellow'?'Y':'G'}</span>
+  </div>
+  <div class="acc-tags">
+    ${a.focusArea?`<span class="acc-tag">${a.focusArea}</span>`:''}
+    ${a.opportunityCategory?`<span class="acc-tag">${a.opportunityCategory}</span>`:''}
+    ${a.crop?`<span class="acc-tag" style="background:#eafaf1;color:#1e8449">${a.crop}</span>`:''}
+  </div>
+</div>`;}).join('')}
+</div>`;
 
-  const sidebar='<div class="acc-sidebar">'
-    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'
-    +'<div style="font-size:13px;font-weight:700">Accounts <span style="color:var(--muted);font-weight:400">('+DB.accounts.length+')</span></div>'
-    +'<button class="nfbtn" style="padding:4px 9px;font-size:11px" onclick="window._aSel=\'\';R()">+ New</button>'
-    +'</div>'
-    +accItems
-    +'</div>';
-
-  /* ── Right panel: full edit form ─────────────────────────────────── */
+  /* ── Right panel: full edit form + AM section ─────── */
   const rightPanel=`<div>
 <div class="card" style="margin-bottom:12px">
 <div class="sh sh-ov">${acc?`Edit: ${acc.companyName}`:'New Account Record'}</div>
