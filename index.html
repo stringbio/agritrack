@@ -44,7 +44,7 @@ tr:hover td{background:#fafbfe}
 .sh{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:700;margin-bottom:12px}
 .sh-ov{background:#e8f0fb;color:#1a5276}
 .sh-am{background:#bdd7f5;color:#0a3d6b}
-.sh-tr{background:#d4f5e2;color:#145a32}
+.sh-tr{background:#e8f0fb;color:#1a5276}
 .od-disp{background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;color:#856404}
 .ro-box{background:#f4f6fb;border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:#4a5568;min-height:34px}
 .fg{display:flex;flex-direction:column;gap:3px;margin-bottom:9px}
@@ -184,7 +184,7 @@ const SEED_DD={
   opportunityCategory:['Bundling','Direct','Partnership','Other'],
   crop:['Rice','Wheat','Corn','Cotton','Soybean','Mustard','Sugarcane','Other'],
   connectStage:['Initial connect','Trials connect','Business connect'],
-  trialStage:['Pre-trial','In-trial','Post-trial','Completed'],
+  trialStage:['Pre-trial','In-trial','Post-trial','Completed','Yet to initiate','NA'],
 };
 const SEED_ACCOUNTS=[
   {id:'ac1',company_name:'Rallis Seed',company_email:'contact@rallis.com',focus_area:'Seeds for scale',account_group:'Tata',program_manager:'Ram',company_type:'Seed Companies',account_priority:'Strategic',opportunity_category:'Bundling',crop:'Rice',stage_id:'s4',overall_status:'yellow',assigned_partner_id:'p3',trial_stage:'Pre-trial',trial_status:'yellow',trial_connect_date:'2026-04-06',agri_manager:'Rajeev',remarks:'Initial contact done',admin_action_item:'Prepare pricing deck and share with AM before next DM meeting'},
@@ -248,7 +248,8 @@ function can(perm){
   if(CU.role==='superadmin')return true;
   if(CU.role==='partner')return false;
   const perms=CU.permissions||{};
-  return perms[perm]===true;
+  if(perm in perms)return perms[perm]===true;
+  return DEFAULT_PERMS[perm]===true;
 }
 const DEFAULT_PERMS={
   viewDashboard:true,viewFollowups:true,manageAccounts:true,viewAnalytics:true,
@@ -947,19 +948,8 @@ function pgMyAccs(){
     <div style="font-size:13px;font-weight:600;margin-bottom:4px">Select an account</div>
     <div style="font-size:11px">Click any account on the left to view details and update your AM Connect stages.</div>
   </div>`:`<div class="card">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-    <div><div style="font-size:14px;font-weight:800">${selAcc.companyName}</div>
-    <div style="font-size:11px;color:var(--muted)">${selAcc.accountGroup||'—'} &middot; <span class="pill ${sc(selAcc.overallStatus)}" style="font-size:10px">${selAcc.overallStatus}</span></div></div>
-    <button class="abtn-sm btn-ghost" style="padding:3px 9px;font-size:11px" onclick="SEL_ACC=null;R()">&#8592; Back</button>
-  </div>
-  ${canPartner('viewAdminActionItem')&&selAcc.adminActionItem?`<div style="background:#fff8f0;border:1px solid #ffcc80;border-radius:7px;padding:8px 11px;margin-bottom:12px;font-size:12px"><span style="font-weight:700;color:#e65100">&#128221; Admin Task:</span> ${selAcc.adminActionItem}</div>`:''}
-  ${canPartner('viewAccountOverview')?`<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px;font-size:11px">
-  <div><div style="color:var(--muted)">Focus Area</div><strong>${selAcc.focusArea||'—'}</strong></div>
-  <div><div style="color:var(--muted)">Priority</div><strong>${selAcc.accountPriority||'—'}</strong></div>
-  <div><div style="color:var(--muted)">Crop</div><strong>${selAcc.crop||'—'}</strong></div>
-  <div><div style="color:var(--muted)">FY AB</div><strong>${selAcc.fy2627AB||'—'}</strong></div>
-  </div>`:''}
-  <div class="divlbl" style="margin-top:4px">AM Connect Update</div>
+  <div class="sh sh-am" style="margin-bottom:12px">AM Connect Stages</div>
+  <div class="divlbl" style="margin-top:0">AM Connect Update</div>
   <div class="fg" style="margin-bottom:10px">
     <label class="fl">Stage</label>
     <select id="sel-am-stage" onchange="SEL_STAGE_AM=this.value;R()" style="max-width:100%">
@@ -992,21 +982,67 @@ function pgMyAccs(){
   </tbody></table></div>
 </div>`;
 
-  return`<div style="font-size:17px;font-weight:700;margin-bottom:3px">My Account Records</div>
-<div style="font-size:12px;color:var(--muted);margin-bottom:16px">Select an account to update AM Connect stages, dates and action items.</div>
-<div class="g2" style="align-items:start">
-<div>
-${!myAccs.length?`<div class="card"><div style="text-align:center;padding:28px;color:var(--muted)">No accounts assigned yet.</div></div>`:myAccs.map(a=>`<div class="acc-card" style="cursor:pointer;border:2px solid ${SEL_ACC===a.id?'#4a7ec7':'var(--border)'};background:${SEL_ACC===a.id?'#f0f7ff':'#fff'}" onclick="SEL_ACC='${a.id}';SEL_STAGE_AM='';R()">
-<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:9px"><div><div style="font-size:13px;font-weight:700">${a.companyName}</div><div style="font-size:11px;color:var(--muted);margin-top:2px">${a.accountGroup} &middot; ${a.stageName}</div></div>
-<div style="display:flex;gap:5px;align-items:center"><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green'}</span>${a.amOD>0?`<span class="oday">+${a.amOD}d OD</span>`:''}</div></div>
-<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:7px;font-size:11px">
-<div><div style="color:var(--muted)">Focus Area</div><strong>${a.focusArea||'—'}</strong></div>
-<div><div style="color:var(--muted)">Priority</div><strong>${a.accountPriority||'—'}</strong></div>
-<div><div style="color:var(--muted)">Crop</div><strong>${a.crop||'—'}</strong></div>
-<div><div style="color:var(--muted)">Stages</div><strong>${getSD(a.id).length}/6 done</strong></div></div>
+  return`<div style="font-size:17px;font-weight:700;margin-bottom:8px">My Account Records</div>
+<div class="g2-acc">
+<div class="acc-sidebar">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+  <div style="font-size:13px;font-weight:700">Assigned <span style="color:var(--muted);font-weight:400">(${myAccs.length})</span></div>
+</div>
+${!myAccs.length
+  ?`<div class="card"><div style="text-align:center;padding:28px;color:var(--muted)">No accounts assigned yet.</div></div>`
+  :myAccs.map(a=>`<div class="acc-list-item${SEL_ACC===a.id?' selected':''}" onclick="SEL_ACC='${a.id}';SEL_STAGE_AM='';R()">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px">
+<div style="min-width:0">
+  <div class="acc-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.companyName}</div>
+  <div class="acc-meta">${a.stageName}</div>
+</div>
+<span class="pill ${sc(a.overallStatus)}" style="font-size:9px;flex-shrink:0;padding:1px 6px">${a.overallStatus==='red'?'R':a.overallStatus==='yellow'?'Y':'G'}</span>
+</div>
+<div class="acc-tags">
+${a.focusArea?`<span class="acc-tag">${a.focusArea}</span>`:''}${a.opportunityCategory?`<span class="acc-tag">${a.opportunityCategory}</span>`:''}${a.crop?`<span class="acc-tag" style="background:#eafaf1;color:#1e8449">${a.crop}</span>`:''}
+</div>
 </div>`).join('')}
 </div>
-<div>${amPanel}</div>
+<div>
+${selAcc?`<div class="card" style="margin-bottom:12px">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+  <div>
+    <div style="font-size:15px;font-weight:800;color:#1a1a2e">${selAcc.companyName}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:2px">${selAcc.accountGroup||''} ${selAcc.accountGroup&&selAcc.stageName?'·':''} ${selAcc.stageName||''}</div>
+    <span class="pill ${sc(selAcc.overallStatus)}" style="margin-top:4px;display:inline-block">${selAcc.overallStatus==='red'?'Red':selAcc.overallStatus==='yellow'?'Yellow':'Green'}</span>
+  </div>
+  <button class="abtn-sm btn-ghost" style="padding:4px 10px;font-size:11px" onclick="SEL_ACC=null;SEL_STAGE_AM='';R()">← Back</button>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;font-size:12px;margin-top:4px">
+  <div><div style="color:var(--muted);font-size:10px;text-transform:uppercase;font-weight:600;letter-spacing:.3px;margin-bottom:2px">Focus Area</div>${selAcc.focusArea||'—'}</div>
+  <div><div style="color:var(--muted);font-size:10px;text-transform:uppercase;font-weight:600;letter-spacing:.3px;margin-bottom:2px">Opportunity Category</div>${selAcc.opportunityCategory||'—'}</div>
+  <div><div style="color:var(--muted);font-size:10px;text-transform:uppercase;font-weight:600;letter-spacing:.3px;margin-bottom:2px">Crop</div>${selAcc.crop||'—'}</div>
+  <div><div style="color:var(--muted);font-size:10px;text-transform:uppercase;font-weight:600;letter-spacing:.3px;margin-bottom:2px">Account Group</div>${selAcc.accountGroup||'—'}</div>
+  <div><div style="color:var(--muted);font-size:10px;text-transform:uppercase;font-weight:600;letter-spacing:.3px;margin-bottom:2px">Priority</div>${selAcc.accountPriority||'—'}</div>
+  <div><div style="color:var(--muted);font-size:10px;text-transform:uppercase;font-weight:600;letter-spacing:.3px;margin-bottom:2px">Company Type</div>${selAcc.companyType||'—'}</div>
+</div>
+${selAcc.adminActionItem?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid #f0f3f8"><span style="font-size:10px;font-weight:700;color:#e65100;text-transform:uppercase;letter-spacing:.3px">&#128221; Action Item</span><div style="font-size:12px;margin-top:3px">${selAcc.adminActionItem}</div></div>`:''}
+${(selAcc.estimatedPeakPotential||selAcc.fy2627AB||selAcc.fy2627FF)?`<div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid #f0f3f8;flex-wrap:wrap">
+  <div style="background:#f4f6fb;border-radius:5px;padding:3px 10px;display:flex;align-items:center;gap:5px;flex:1;min-width:0"><span style="font-size:9px;color:var(--muted);font-weight:600;text-transform:uppercase;white-space:nowrap">Peak Potential</span><span style="font-size:13px;font-weight:700;color:#4a7ec7;margin-left:auto">${selAcc.estimatedPeakPotential||'—'} <span style="font-size:9px;font-weight:400">Ac</span></span></div>
+  <div style="background:#f4f6fb;border-radius:5px;padding:3px 10px;display:flex;align-items:center;gap:5px;flex:1;min-width:0"><span style="font-size:9px;color:var(--muted);font-weight:600;text-transform:uppercase;white-space:nowrap">FY 26–27 AB</span><span style="font-size:13px;font-weight:700;color:#3aaa5e;margin-left:auto">${selAcc.fy2627AB||'—'} <span style="font-size:9px;font-weight:400">Ac</span></span></div>
+  <div style="background:#f4f6fb;border-radius:5px;padding:3px 10px;display:flex;align-items:center;gap:5px;flex:1;min-width:0"><span style="font-size:9px;color:var(--muted);font-weight:600;text-transform:uppercase;white-space:nowrap">FY 26–27 FF</span><span style="font-size:13px;font-weight:700;color:#e6a817;margin-left:auto">${selAcc.fy2627FF||'—'} <span style="font-size:9px;font-weight:400">Ac</span></span></div>
+  <div style="background:#f4f6fb;border-radius:5px;padding:3px 10px;display:flex;align-items:center;gap:5px;flex:1;min-width:0"><span style="font-size:9px;color:var(--muted);font-weight:600;text-transform:uppercase">Importance</span><span style="font-size:12px;font-weight:700;color:#1a1a2e;margin-left:auto">${selAcc.accountImportance||'—'}</span></div>
+</div>`:''}
+</div>`:''}
+${selAcc&&(selAcc.trialStage||selAcc.trialStatus||selAcc.trialConnectDate)?`<div class="card" style="margin-bottom:12px">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+  <div><span class="sh sh-ov">&#127807; Trials</span><span style="font-size:11px;color:var(--muted);margin-left:4px">(Trial Details)</span></div>
+  ${selAcc.trialStatus?`<span style="background:${selAcc.trialStatus==='green'?'#3aaa5e':selAcc.trialStatus==='red'?'#e74c3c':selAcc.trialStatus==='na'?'#7a8499':'#e6a817'};color:#fff;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700">${selAcc.trialStatus.charAt(0).toUpperCase()+selAcc.trialStatus.slice(1)}</span>`:''}
+</div>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;font-size:12px">
+  <div><div style="color:var(--muted);font-size:10px;text-transform:uppercase;font-weight:600;margin-bottom:2px">Trial Stage</div>${selAcc.trialStage||'—'}</div>
+  <div><div style="color:var(--muted);font-size:10px;text-transform:uppercase;font-weight:600;margin-bottom:2px">Trial Connect Date</div>${selAcc.trialConnectDate?fmtD(selAcc.trialConnectDate):'—'}${selAcc.trialConnectDate&&odD(selAcc.trialConnectDate)>0?`<span class="oday" style="font-size:10px;margin-left:4px">+${odD(selAcc.trialConnectDate)}d</span>`:''}</div>
+  <div><div style="color:var(--muted);font-size:10px;text-transform:uppercase;font-weight:600;margin-bottom:2px">Agri Manager</div>${selAcc.trialAgriManager||'—'}</div>
+</div>
+${selAcc.trialRemarks?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid #f0f3f8"><div style="color:var(--muted);font-size:10px;text-transform:uppercase;font-weight:600;margin-bottom:3px">Remarks</div><div style="font-size:12px;color:#2d3748;line-height:1.5">${selAcc.trialRemarks}</div></div>`:''}
+</div>`:''}
+${amPanel}
+</div>
 </div>`;}
   const sel=SEL_ACC?DB.accounts.find(a=>a.id===SEL_ACC):null;
 
@@ -1024,17 +1060,18 @@ function trialsSection(sid){
   const statusColors={red:'#e74c3c',yellow:'#e6a817',green:'#3aaa5e',na:'#7a8499'};
   const sCol=statusColors[tst]||'var(--muted)';
 
-  return `<div class="card" style="margin-bottom:12px;border-left:4px solid #1abc9c">
+  return `<div class="card" style="margin-bottom:12px;">
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-  <div class="sh" style="background:transparent;padding:0;border:none;margin:0;color:#0e7a6e;font-size:13px;font-weight:700">
-    &#127807; Trials <span style="font-size:11px;font-weight:500;color:var(--muted);margin-left:4px">(Trial Details)</span>
+  <div>
+    <span class="sh sh-ov">&#127807; Trials</span>
+    <span style="font-size:11px;color:var(--muted);margin-left:2px">(Trial Details)</span>
   </div>
   ${tst?`<span style="background:${sCol};color:#fff;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700">${tst.charAt(0).toUpperCase()+tst.slice(1)}</span>`:''}
 </div>
 <div class="fg4">
   <div class="fg">
     <label class="fl">Trial Stage</label>
-    <input type="text" id="tr-stage" value="${ts}" placeholder="e.g. In-trial, Pre-trial…">
+    <select id="tr-stage"><option value="">Select...</option>${(DB.dd.trialStage||['Pre-trial','In-trial','Post-trial','Completed','Yet to initiate','NA']).map(o=>`<option value="${o}"${ts===o?' selected':''}>${o}</option>`).join('')}</select>
   </div>
   <div class="fg">
     <label class="fl">Trial Status</label>
@@ -1068,7 +1105,7 @@ function trialsSection(sid){
   </div>
 </div>
 <div style="margin-top:10px">
-  <button class="abtn" style="background:#1abc9c;color:#fff;padding:6px 14px;font-size:12px" onclick="saveTrials('${sid}')">Save Trial Details</button>
+  <button class="abtn abtn-blue" onclick="saveTrials('${sid}')">Save Trial Details</button>
 </div>
 </div>`;
 }
