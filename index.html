@@ -102,6 +102,15 @@ textarea{resize:vertical;min-height:60px}
 .rcheck input[type=checkbox]{width:13px;height:13px;accent-color:#4a7ec7}
 .rp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:9px}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.g2-acc{display:grid;grid-template-columns:280px 1fr;gap:14px;align-items:start}
+.acc-sidebar{overflow-y:auto;max-height:calc(100vh - 120px);position:sticky;top:0}
+.acc-list-item{padding:9px 11px;border:2px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;background:#fff;transition:border-color .15s,background .15s}
+.acc-list-item:hover{border-color:#4a7ec7;background:#f8fbff}
+.acc-list-item.selected{border-color:#4a7ec7;background:#f0f7ff}
+.acc-list-item .acc-name{font-size:12px;font-weight:700;color:#1a1a2e}
+.acc-list-item .acc-meta{font-size:10px;color:var(--muted);margin-top:1px}
+.acc-list-item .acc-tags{display:flex;gap:3px;margin-top:4px;flex-wrap:wrap}
+.acc-tag{font-size:9px;font-weight:600;padding:1px 5px;border-radius:6px;background:#f0f7ff;color:#1a5276}
 .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px}
 .nfbtn{background:#4a7ec7;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
 .divlbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);padding:3px 0;border-bottom:1px solid var(--border);margin-bottom:10px}
@@ -299,6 +308,12 @@ function mapAcc(r){
     fy2627FF:parseFloat(r.fy_26_27_ff_acres)||0,
     estimatedPeakPotential:parseFloat(r.estimated_peak_potential)||0,
     accountImportance:r.account_importance||'',
+    // Trial fields
+    trialStage:r.trial_stage||'',
+    trialStatus:r.trial_status||'',
+    trialConnectDate:r.trial_connect_date||'',
+    trialAgriManager:r.trial_agri_manager||'',
+    trialRemarks:r.trial_remarks||'',
     createdAt:r.created_at?r.created_at.split('T')[0]:today(),
     updatedAt:r.updated_at?r.updated_at.split('T')[0]:today()
   };
@@ -341,6 +356,12 @@ function mapAssignment(r){
     assignedBy:r.assigned_by||'',
     status:r.status||'open',
     comments:r.comments||[],
+    // Trial fields
+    trialStage:r.trial_stage||'',
+    trialStatus:r.trial_status||'',
+    trialConnectDate:r.trial_connect_date||'',
+    trialAgriManager:r.trial_agri_manager||'',
+    trialRemarks:r.trial_remarks||'',
     createdAt:r.created_at?r.created_at.split('T')[0]:today(),
     updatedAt:r.updated_at?r.updated_at.split('T')[0]:today()
   };
@@ -988,22 +1009,128 @@ ${!myAccs.length?`<div class="card"><div style="text-align:center;padding:28px;c
 <div>${amPanel}</div>
 </div>`;}
   const sel=SEL_ACC?DB.accounts.find(a=>a.id===SEL_ACC):null;
+
+function trialsSection(sid){
+  const acc=DB.accounts.find(a=>a.id===sid);
+  if(!acc)return'';
+  // Trial data stored in pt_accounts trial_* fields (or show empty form for entry)
+  const ts=acc.trialStage||'';
+  const tst=acc.trialStatus||'';
+  const tcd=acc.trialConnectDate||'';
+  const tam=acc.trialAgriManager||'';
+  const trm=acc.trialRemarks||'';
+  const trOD=tcd?odD(tcd):0;
+
+  const statusColors={red:'#e74c3c',yellow:'#e6a817',green:'#3aaa5e',na:'#7a8499'};
+  const sCol=statusColors[tst]||'var(--muted)';
+
+  return `<div class="card" style="margin-bottom:12px;border-left:4px solid #1abc9c">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+  <div class="sh" style="background:transparent;padding:0;border:none;margin:0;color:#0e7a6e;font-size:13px;font-weight:700">
+    &#127807; Trials <span style="font-size:11px;font-weight:500;color:var(--muted);margin-left:4px">(Trial Details)</span>
+  </div>
+  ${tst?`<span style="background:${sCol};color:#fff;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700">${tst.charAt(0).toUpperCase()+tst.slice(1)}</span>`:''}
+</div>
+<div class="fg4">
+  <div class="fg">
+    <label class="fl">Trial Stage</label>
+    <input type="text" id="tr-stage" value="${ts}" placeholder="e.g. In-trial, Pre-trial…">
+  </div>
+  <div class="fg">
+    <label class="fl">Trial Status</label>
+    <select id="tr-status">
+      <option value="">Select…</option>
+      <option value="red"${tst==='red'?' selected':''}>Red</option>
+      <option value="yellow"${tst==='yellow'?' selected':''}>Yellow</option>
+      <option value="green"${tst==='green'?' selected':''}>Green</option>
+      <option value="na"${tst==='na'?' selected':''}>Not Applicable</option>
+    </select>
+  </div>
+  <div class="fg">
+    <label class="fl">Trial Connect Date</label>
+    <input type="date" id="tr-date" value="${tcd}">
+  </div>
+  <div class="fg">
+    <label class="fl">Trial Overdue</label>
+    <div class="${trOD>0?'od-disp':''}">
+      ${tcd?(trOD>0?`+${trOD} days overdue`:'On track'):'<span style="color:var(--muted);font-style:italic">No date set</span>'}
+    </div>
+  </div>
+</div>
+<div class="fg2" style="margin-top:8px">
+  <div class="fg">
+    <label class="fl">Agri Manager</label>
+    <input type="text" id="tr-am" value="${tam}" placeholder="Name of Agri Manager">
+  </div>
+  <div class="fg">
+    <label class="fl">Remarks</label>
+    <textarea id="tr-remarks" style="min-height:60px" placeholder="Observations, notes, next steps…">${trm}</textarea>
+  </div>
+</div>
+<div style="margin-top:10px">
+  <button class="abtn" style="background:#1abc9c;color:#fff;padding:6px 14px;font-size:12px" onclick="saveTrials('${sid}')">Save Trial Details</button>
+</div>
+</div>`;
+}
+
+async function saveTrials(sid){
+  const row={
+    trial_stage:document.getElementById('tr-stage')?.value||null,
+    trial_status:document.getElementById('tr-status')?.value||null,
+    trial_connect_date:document.getElementById('tr-date')?.value||null,
+    trial_agri_manager:document.getElementById('tr-am')?.value||null,
+    trial_remarks:document.getElementById('tr-remarks')?.value||null,
+    updated_at:new Date().toISOString()
+  };
+  const{error}=await SB.from('pt_accounts').update(row).eq('id',sid);
+  if(error)return sal('Error saving trial details: '+error.message,'ae');
+  // Update local cache
+  const acc=DB.accounts.find(a=>a.id===sid);
+  if(acc){
+    acc.trialStage=row.trial_stage||'';
+    acc.trialStatus=row.trial_status||'';
+    acc.trialConnectDate=row.trial_connect_date||'';
+    acc.trialAgriManager=row.trial_agri_manager||'';
+    acc.trialRemarks=row.trial_remarks||'';
+  }
+  sal('Trial details saved!','as');
+}
+
 function pgAccEntry(){
   if(!isA())return'<div style="text-align:center;padding:40px;color:var(--muted)">Access denied</div>';
   const dd=DB.dd;
   const ddS=(id,key,val)=>`<select id="${id}"><option value="">Select...</option>${(dd[key]||[]).map(o=>`<option value="${o}"${val===o?' selected':''}>${o}</option>`).join('')}</select>`;
   const sid=window._aSel||'';
   const acc=sid?DB.accounts.find(a=>a.id===sid):null;
-  return`<div class="g2" style="align-items:start">
-<div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-<div style="font-size:15px;font-weight:700">Account Records (${DB.accounts.length})</div>
-<button class="nfbtn" onclick="window._aSel='';R()">+ New Account</button></div>
-${DB.accounts.map(a=>`<div onclick="window._aSel='${a.id}';SEL_STAGE_ADMIN='';R()" style="padding:9px 12px;border:2px solid ${sid===a.id?'#4a7ec7':'var(--border)'};border-radius:8px;margin-bottom:7px;cursor:pointer;background:${sid===a.id?'#f0f7ff':'#fff'}">
-<div style="display:flex;justify-content:space-between;align-items:center">
-<div><div style="font-size:12px;font-weight:700">${a.companyName}</div><div style="font-size:10px;color:var(--muted);margin-top:1px">${a.accountGroup||'—'} &middot; ${gu(a.assignedPartnerId).name}</div></div>
-<span class="pill ${sc(a.overallStatus)}" style="font-size:10px">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green'}</span></div></div>`).join('')}
+
+  /* ── Left sidebar: narrow account list ─────────────── */
+  const sidebar=`<div class="acc-sidebar">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+  <div style="font-size:13px;font-weight:700">Accounts <span style="color:var(--muted);font-weight:400">(${DB.accounts.length})</span></div>
+  <button class="nfbtn" style="padding:4px 9px;font-size:11px" onclick="window._aSel='';R()">+ New</button>
 </div>
-<div><div class="card">
+${DB.accounts.map(a=>{
+  const ptnr=gu(a.assignedPartnerId);
+  return`<div onclick="window._aSel='${a.id}';SEL_STAGE_ADMIN='';R()"
+    class="acc-list-item${sid===a.id?' selected':''}">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px">
+    <div style="min-width:0">
+      <div class="acc-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.companyName}</div>
+      <div class="acc-meta">${ptnr.name}</div>
+    </div>
+    <span class="pill ${sc(a.overallStatus)}" style="font-size:9px;flex-shrink:0;padding:1px 6px">${a.overallStatus==='red'?'R':a.overallStatus==='yellow'?'Y':'G'}</span>
+  </div>
+  <div class="acc-tags">
+    ${a.focusArea?`<span class="acc-tag">${a.focusArea}</span>`:''}
+    ${a.opportunityCategory?`<span class="acc-tag">${a.opportunityCategory}</span>`:''}
+    ${a.crop?`<span class="acc-tag" style="background:#eafaf1;color:#1e8449">${a.crop}</span>`:''}
+  </div>
+</div>`;}).join('')}
+</div>`;
+
+  /* ── Right panel: full edit form + AM section ─────── */
+  const rightPanel=`<div>
+<div class="card" style="margin-bottom:12px">
 <div class="sh sh-ov">${acc?`Edit: ${acc.companyName}`:'New Account Record'}</div>
 <div class="divlbl">Account Overview</div>
 <div class="fg4">
@@ -1041,8 +1168,14 @@ ${acc?`<div style="font-size:10px;color:var(--muted);margin-top:2px">&#9432; Cha
 <button class="abtn-sm btn-ghost" style="padding:6px 12px;font-size:12px" onclick="window._aSel=null;R()">Cancel</button>
 ${sid?`<button class="abtn-sm btn-red" style="padding:6px 12px;font-size:12px;margin-left:auto" onclick="delAcc('${sid}')">Delete</button>`:''}
 </div>
+</div>
+${sid?trialsSection(sid):''}
 ${sid?adminAMSection(sid):''}
-</div></div></div>`;}
+</div>`;
+
+  return`<div class="g2-acc">${sidebar}${rightPanel}</div>`;
+}
+
 
 function adminAMSection(sid){
   const stageDataForAcc=getSD(sid);
