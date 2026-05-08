@@ -782,6 +782,12 @@ function pgMyAccs(){
   <div style="display:flex;gap:9px;margin-top:14px">
     <button class="abtn abtn-blue" onclick="saveMyStageData('${selAcc.id}')">Save Stage Data</button>
   </div>
+  <!-- Assigned items tracking for this account+stage — visible to primary AM -->
+  ${(()=>{
+    const selStage=document.getElementById('sel-am-stage')?.value||AM_STAGES[0];
+    const myItems=DB.assignments.filter(a=>a.accountId===selAcc.id&&a.stage===selStage);
+    return myItems.length?assignedItemsPanel(selAcc.id,selStage,false):'';
+  })()}
   <div class="divlbl" style="margin-top:16px">All Stage Summary</div>
   <div class="tscroll"><table style="min-width:400px"><thead><tr><th>Stage</th><th>Connect Date</th><th>Next Connect</th><th>OD</th><th>Items</th></tr></thead>
   <tbody>${AM_STAGES.map(s=>{const sd=getSDStage(selAcc.id,s);if(!sd)return`<tr><td style="color:var(--muted);font-size:11px">${s}</td><td colspan="4" style="color:var(--muted);font-size:10px">No data yet</td></tr>`;const od=odD(sd.nextConnectDate);const filled=sd.actionItems.filter(i=>i.text);return`<tr><td style="font-size:11px;font-weight:600">${s}</td><td style="font-size:11px">${fmtD(sd.connectDate)}</td><td style="font-size:11px">${fmtD(sd.nextConnectDate)}</td><td>${od>0?`<span class="oday">+${od}d</span>`:'<span style="color:#3aaa5e;font-size:10px">OK</span>'}</td><td style="font-size:10px">${filled.length?filled.map(i=>i.text).join(', ').slice(0,40)+'…':'—'}</td></tr>`;}).join('')}
@@ -884,6 +890,7 @@ ${hasData?`<div class="infob" style="margin-bottom:10px">This account has data i
   <div id="admin-ai-wrapper">${buildStageActionItems(existing,sid,true)}</div>
 </div>
 <button class="abtn abtn-blue" style="margin-top:12px" onclick="saveAdminStageData('${sid}')">Save Stage Data</button>
+${(()=>{const allItems=DB.assignments.filter(a=>a.accountId===sid);return allItems.length?`<div style="margin-top:12px">${assignedItemsPanel(sid,null,true)}</div>`:'';})()}
 </div>`;}
 
 function pgFU(){
@@ -1401,14 +1408,14 @@ ${myItems.map(item=>{
     <div style="font-size:11px;font-weight:700;color:#1a1a2e;margin-bottom:7px">Comments & Updates (${(item.comments||[]).length})</div>
     ${(item.comments||[]).map(c=>`<div style="padding:7px 10px;background:${c.userId===CU.id?'#e8f0fb':'#f4f6fb'};border-radius:7px;margin-bottom:6px">
       <div style="display:flex;justify-content:space-between;margin-bottom:3px">
-        <strong style="font-size:11px;color:${c.userId===CU.id?'#1a5276':'#2d3748'}">${c.userName}</strong>
+        <strong style="font-size:11px;color:${c.userId===item.assignedTo?'#1e8449':c.userId===item.assignedBy?'#1a5276':'#2d3748'}">${c.userName}${c.userId===item.assignedBy?' (Assigned By)':''}</strong>
         <span style="font-size:10px;color:var(--muted)">${c.ts}</span>
       </div>
       <div style="font-size:12px;color:#2d3748">${c.text}</div>
     </div>`).join('')}
     <div style="display:flex;gap:7px;margin-top:8px">
-      <input type="text" id="ai-comment-${item.id}" placeholder="Add a comment or update…" style="flex:1;background:#fff;font-size:12px">
-      <button class="abtn abtn-blue" style="padding:6px 12px;font-size:12px" onclick="addAIComment('${item.id}')">Post</button>
+      <input type="text" id="ai-track-comment-${item.id}" placeholder="Add a comment or update…" style="flex:1;background:#fff;font-size:12px">
+      <button class="abtn abtn-blue" style="padding:6px 12px;font-size:12px" onclick="addTrackingComment('${item.id}','ai-track-comment-${item.id}')">Post</button>
     </div>
   </div>
 </div>`;
@@ -1511,6 +1518,80 @@ async function updateAssignmentStatus(assignId,newStatus){
   R();
 }
 
+
+/* ── Assigned Action Items tracking panel ──────────────────────────── */
+function assignedItemsPanel(accountId, stage, forAdmin){
+  const items = DB.assignments.filter(a =>
+    a.accountId === accountId && (!stage || a.stage === stage)
+  );
+  if(!items.length) return '';
+
+  const statusColor = {open:'#e6a817', in_progress:'#4a7ec7', closed:'#3aaa5e'};
+  const statusLabel = {open:'Open', in_progress:'In Progress', closed:'Closed'};
+
+  return `<div style="margin-top:14px;padding-top:12px;border-top:2px solid #e8f0fb">
+<div class="divlbl" style="margin-bottom:8px;color:#1a5276">
+  &#128100; Assigned Action Items — Tracking
+  <span style="font-weight:400;font-size:10px;color:var(--muted)"> (${items.length} item${items.length!==1?'s':''})</span>
+</div>
+${items.map(item => {
+  const assignedTo = gu(item.assignedTo);
+  const assignedBy = gu(item.assignedBy);
+  const sColor = statusColor[item.status] || '#7a8499';
+  const sLabel = statusLabel[item.status] || item.status;
+  const canComment = forAdmin || CU.id === DB.accounts.find(a=>a.id===accountId)?.assignedPartnerId || CU.id === item.assignedTo;
+  const commentInputId = 'ai-track-comment-' + item.id;
+
+  return `<div style="background:#f8fafd;border:1px solid #dde3ec;border-left:4px solid ${sColor};border-radius:8px;padding:12px 14px;margin-bottom:10px">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+    <div>
+      <div style="font-size:12px;color:var(--muted)">Stage: <strong>${item.stage}</strong> &middot; Item #${item.actionItemIdx+1}</div>
+      <div style="background:#fff;border:1px solid var(--border);border-radius:6px;padding:6px 10px;margin-top:5px;font-size:12px;font-weight:600;color:#1a1a2e">${item.actionItemText||'—'}</div>
+    </div>
+    <span style="background:${sColor};color:#fff;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;white-space:nowrap;margin-left:8px">${sLabel}</span>
+  </div>
+  <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
+    Assigned to: <strong style="color:#1a5276">${assignedTo.name||'—'}</strong> &middot;
+    By: <strong>${assignedBy.name||'—'}</strong> &middot; ${fmtD(item.createdAt)}
+    ${item.updatedAt!==item.createdAt?` &middot; Updated: ${fmtD(item.updatedAt)}`:''}
+  </div>
+  <!-- Comment thread -->
+  <div style="margin-top:6px">
+    ${(item.comments||[]).length ? `<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px">Comments (${item.comments.length})</div>
+    ${(item.comments).map(c=>`<div style="padding:6px 9px;background:${c.userId===CU.id?'#e8f0fb':c.userId===item.assignedTo?'#eafaf1':'#f4f6fb'};border-radius:6px;margin-bottom:4px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:2px">
+        <strong style="font-size:10px;color:${c.userId===item.assignedTo?'#1e8449':'#1a5276'}">${c.userName}${c.userId===item.assignedTo?' (Assigned AM)':c.userId===item.assignedBy?' (Assigned By)':''}</strong>
+        <span style="font-size:10px;color:var(--muted)">${c.ts}</span>
+      </div>
+      <div style="font-size:12px;color:#2d3748">${c.text}</div>
+    </div>`).join('')}` : ''}
+    ${canComment ? `<div style="display:flex;gap:6px;margin-top:6px">
+      <input type="text" id="${commentInputId}" placeholder="Add comment or update…" style="flex:1;font-size:12px;background:#fff">
+      <button class="abtn abtn-blue" style="padding:5px 11px;font-size:11px" onclick="addTrackingComment('${item.id}','${commentInputId}')">Post</button>
+    </div>` : ''}
+  </div>
+</div>`;
+}).join('')}
+</div>`;
+}
+
+async function addTrackingComment(assignId, inputId){
+  const inp = document.getElementById(inputId);
+  const txt = (inp?.value||'').trim();
+  if(!txt) return sal('Enter a comment first','ae');
+  const item = DB.assignments.find(a=>a.id===assignId);
+  if(!item) return;
+  const newComment = {userId:CU.id, userName:CU.name, text:txt, ts:nowTs()};
+  const newComments = [...(item.comments||[]), newComment];
+  const{error} = await SB.from('pt_action_item_assignments').update({comments:newComments, updated_at:new Date().toISOString()}).eq('id',assignId);
+  if(error) return sal('Error: '+error.message,'ae');
+  item.comments = newComments;
+  item.updatedAt = today();
+  if(inp) inp.value='';
+  sal('Comment posted!','as');
+  R();
+}
+
 async function addAIComment(assignId){
   const inp=document.getElementById('ai-comment-'+assignId);
   const txt=(inp?.value||'').trim();
@@ -1551,7 +1632,41 @@ function pgAdmin(){
   const pendingPanel=DB.pendingSignups.length&&can('managePartners')?`<div class="card" style="border-color:#f5d47a;margin-bottom:12px"><div class="ctitle" style="color:#b8860b">Pending Approvals (${DB.pendingSignups.length})</div>${DB.pendingSignups.map(p=>`<div class="prow"><div class="av avp">${p.name.split(' ').map(w=>w[0]).join('').slice(0,2)}</div><div style="flex:1"><div style="font-size:12px;font-weight:600">${p.name}</div><div style="font-size:10px;color:var(--muted)">${p.email} &middot; ${p.requested_at}</div>${p.note?`<div style="font-size:11px">${p.note}</div>`:''}</div><div style="display:flex;gap:4px"><button class="abtn-sm btn-grn" onclick="approveP('${p.id}')">Approve</button><button class="abtn-sm btn-red" onclick="rejectP('${p.id}')">Reject</button></div></div>`).join('')}</div>`:'';
   const stagesPanel=can('manageStages')?`<div class="card" style="margin-bottom:12px"><div class="ctitle">Pipeline Stages</div><table><thead><tr><th>#</th><th>Name</th><th></th></tr></thead><tbody>${DB.stages.map((s,i)=>`<tr><td style="color:var(--muted)">${i+1}</td><td><strong>${s.name}</strong></td><td><div style="display:flex;gap:4px"><button class="abtn-sm btn-ghost" onclick="openM('edit-stage','${s.id}')">Edit</button><button class="abtn-sm btn-red" onclick="delStg('${s.id}')">Del</button></div></td></tr>`).join('')}</tbody></table><button class="abtn-sm btn-blue" style="margin-top:9px;padding:4px 10px" onclick="openM('add-stage')">+ Add Stage</button></div>`:`<div class="card" style="margin-bottom:12px;border-color:#fde8e8"><div style="padding:16px;text-align:center;color:#e74c3c;font-size:12px">&#x26D4; No permission to manage stages</div></div>`;
   const ddPanel=can('manageDropdowns')?`<div class="card"><div class="ctitle">Dropdown Options Manager</div>${Object.keys(dd).map(key=>`<div style="margin-bottom:10px;border:1px solid var(--border);border-radius:8px;padding:10px"><div style="font-size:11px;font-weight:700;color:#1a1a2e;margin-bottom:6px">${ddL[key]||key}</div><div style="display:flex;flex-wrap:wrap;min-height:26px;margin-bottom:6px">${(dd[key]||[]).map((o,i)=>`<span class="dtag">${o}<button class="dtag-x" onclick="rmDD('${key}',${i})">&times;</button></span>`).join('')}${!dd[key]?.length?'<span style="font-size:11px;color:var(--muted)">No options yet</span>':''}</div><div style="display:flex;gap:5px"><input type="text" id="dd-${key}" placeholder="New option..." style="flex:1;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:5px;outline:none"><button class="abtn-sm btn-blue" style="padding:4px 10px;white-space:nowrap" onclick="addDD('${key}')">+ Add</button></div></div>`).join('')}</div>`:`<div class="card" style="border-color:#fde8e8"><div style="padding:16px;text-align:center;color:#e74c3c;font-size:12px">&#x26D4; No permission to manage dropdowns</div></div>`;
-  return`<div class="g2"><div>${pendingPanel}${saPanel}${partnerPanel}</div><div>${stagesPanel}${ddPanel}</div></div>`;}
+  return`<div class="g2"><div>${pendingPanel}${saPanel}${partnerPanel}</div><div>${stagesPanel}${ddPanel}${(()=>{
+  const all=DB.assignments;
+  if(!all.length)return'';
+  const statusColor={open:'#e6a817',in_progress:'#4a7ec7',closed:'#3aaa5e'};
+  const statusLabel={open:'Open',in_progress:'In Progress',closed:'Closed'};
+  const byAcc={};
+  all.forEach(a=>{if(!byAcc[a.accountId])byAcc[a.accountId]=[];byAcc[a.accountId].push(a);});
+  return`<div class="card" style="margin-top:12px">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+  <div class="ctitle" style="margin-bottom:0">&#128100; Assigned Action Items — All Accounts</div>
+  <div style="display:flex;gap:6px">
+    <span style="background:#fff8f0;color:#e65100;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${all.filter(a=>a.status==='open').length} Open</span>
+    <span style="background:#e8f0fb;color:#1a5276;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${all.filter(a=>a.status==='in_progress').length} In Progress</span>
+    <span style="background:#eafaf1;color:#1e8449;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${all.filter(a=>a.status==='closed').length} Closed</span>
+  </div>
+</div>
+<div class="tscroll"><table style="min-width:700px"><thead><tr><th>Account</th><th>Stage</th><th>Action Item</th><th>Assigned To</th><th>Assigned By</th><th>Status</th><th>Comments</th><th>Last Update</th></tr></thead>
+<tbody>${all.map(item=>{
+  const acc=DB.accounts.find(a=>a.id===item.accountId);
+  const sColor=statusColor[item.status]||'#7a8499';
+  const sLabel=statusLabel[item.status]||item.status;
+  const latestComment=(item.comments||[]).slice(-1)[0];
+  return`<tr>
+<td><strong style="font-size:12px">${acc?.companyName||'—'}</strong><div style="font-size:10px;color:var(--muted)">${acc?.accountGroup||''}</div></td>
+<td style="font-size:11px">${item.stage}</td>
+<td style="font-size:12px;max-width:180px">${item.actionItemText||'—'}</td>
+<td style="font-size:11px;color:#1e8449;font-weight:600">${gu(item.assignedTo).name||'—'}</td>
+<td style="font-size:11px;color:var(--muted)">${gu(item.assignedBy).name||'—'}</td>
+<td><span style="background:${sColor};color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">${sLabel}</span></td>
+<td style="font-size:11px;max-width:160px">${latestComment?`<span style="color:#1a5276;font-weight:600">${latestComment.userName}:</span> ${latestComment.text.slice(0,40)}${latestComment.text.length>40?'…':''}`:latestComment?'':'<span style="color:var(--muted)">—</span>'}</td>
+<td style="font-size:11px;color:var(--muted);white-space:nowrap">${fmtD(item.updatedAt)}</td>
+</tr>`;}).join('')}
+</tbody></table></div>
+</div>`;})()}</div></div>`;}
+
 
 /* ─────────────────────────── PROGRESS PAGES (REMOVED) ─────────────────────────── */
 /* My Progress feature has been removed per requirements.
