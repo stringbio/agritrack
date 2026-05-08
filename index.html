@@ -21,6 +21,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#eef2f7;color:#1a1a2
 .ntab{padding:9px 16px;font-size:12px;color:#c8d9f5;cursor:pointer;border-bottom:3px solid transparent;font-weight:500;border:none;background:none}
 .ntab:hover{color:#fff;background:#4578c4}
 .ntab.act{color:#fff;border-bottom:3px solid #fff;background:#4578c4}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
+.mbox{background:#fff;border-radius:12px;padding:22px 24px;max-width:480px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
 .content{flex:1;padding:16px;overflow-y:auto}
 .pg{display:none}.pg.act{display:block}
 .krow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:16px}
@@ -531,12 +533,18 @@ function appH(){
   if(!validIds.includes(PAGE))PAGE=tabs[0].id;
   const topbar=`<div class="topbar"><div style="display:flex;align-items:center;gap:6px">${LOGO_IMG_TOPBAR}<span style="font-weight:700;font-size:13px;color:#fff">AgriTrack</span></div>
 <div style="display:flex;align-items:center;gap:10px">
-<span style="font-size:11px;color:rgba(255,255,255,.7)">${CU.name} &middot; <span style="opacity:.8">${displayRole(CU.role)}</span></span>
-<button class="tbtn" onclick="logout()">Logout</button></div></div>`;
-  const navTabs=`<div class="tabs">${tabs.map(t=>`<button class="tab${PAGE===t.id?' active':''}" onclick="PAGE='${t.id}';location.hash='${t.id}';AL=null;PIDX=0;R()">${t.label}</button>`).join('')}</div>`;
+<span style="font-size:12px;color:#c8d9f5;font-weight:500">${CU.name} &middot; ${displayRole(CU.role)}</span>
+<button class="ubtn" onclick="logout()">Logout</button></div></div>`;
+  const navTabs=`<div class="nav-tabs">${tabs.map(t=>`<button class="ntab${PAGE===t.id?' act':''}" onclick="PAGE='${t.id}';location.hash='${t.id}';AL=null;PIDX=0;R()">${t.label}</button>`).join('')}</div>`;
   const pageContent=getPageHTML(PAGE);
-  return topbar+navTabs+`<div class="content">${pageContent}</div>`;
+  return topbar+navTabs+`<div class="content">
+${AL?`<div class="alert ${AL.type}" style="margin:0 0 12px">${AL.msg}</div>`:''}
+${pageContent}
+</div>
+${MODAL?`<div class="overlay" onclick="closeM()"><div class="mbox" onclick="event.stopPropagation()">${MODAL.html}</div></div>`:''}`;
 }
+
+function closeM(){MODAL=null;R();}
 
 /* ─────────────────────────── DATA HELPERS ─────────────────────────── */
 function enAccs(){return DB.accounts.map(a=>{const am=getAM(a.id);return{...a,am,partnerName:gu(a.assignedPartnerId).name,stageName:gs(a.stageId).name,amOD:am?odD(am.nextConnectDateDM):0};});}
@@ -1419,33 +1427,55 @@ function openAssignFromKey(key){
   openAssignModal(d.accountId,d.stage,d.itemIdx,d.itemText);
 }
 
+/* Store pending assign context globally to avoid any string-passing issues */
+let _assignCtx = null;
+
 function openAssignModal(accountId,stage,itemIdx,itemText){
   const acc=DB.accounts.find(a=>a.id===accountId);
-  const partners=DB.users.filter(u=>u.role==='partner'&&u.id!==acc?.assignedPartnerId);
+  if(!acc)return sal('Account not found','ae');
+  const partners=DB.users.filter(u=>u.role==='partner'&&u.id!==acc.assignedPartnerId);
   const existing=DB.assignments.find(a=>a.accountId===accountId&&a.stage===stage&&a.actionItemIdx===itemIdx);
+  
+  // Store context — no string passing through onclick
+  _assignCtx={accountId,stage,itemIdx,itemText,existingId:existing?.id||''};
 
-  MODAL={type:'assign-ai',html:`<div style="font-size:16px;font-weight:700;margin-bottom:4px">Assign Action Item</div>
-<div style="font-size:11px;color:var(--muted);margin-bottom:14px">${acc?.companyName||'—'} &middot; Stage: ${stage} &middot; Item #${itemIdx+1}</div>
+  const modalHTML=`<div style="font-size:16px;font-weight:700;margin-bottom:4px">&#128100; Assign Action Item</div>
+<div style="font-size:11px;color:var(--muted);margin-bottom:14px">${acc.companyName} &middot; Stage: ${stage} &middot; Item #${itemIdx+1}</div>
 <div style="background:#f4f6fb;border-radius:7px;padding:10px 12px;margin-bottom:14px">
   <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:4px">Action Item Text</div>
   <div style="font-size:13px;font-weight:600;color:#1a1a2e">${itemText||'—'}</div>
 </div>
-${existing?`<div style="background:#fff8f0;border:1px solid #ffcc80;border-radius:7px;padding:8px 11px;margin-bottom:12px;font-size:12px">Currently assigned to <strong>${gu(existing.assignedTo).name}</strong>. Saving will reassign.</div>`:''}
-<div class="fg" style="margin-bottom:12px">
+${existing?`<div style="background:#fff8f0;border:1px solid #ffcc80;border-radius:7px;padding:8px 11px;margin-bottom:12px;font-size:12px">&#9888; Currently assigned to <strong>${gu(existing.assignedTo).name}</strong>. Saving will reassign.</div>`:''}
+<div class="fg" style="margin-bottom:14px">
   <label class="fl">Assign To Alliance Manager</label>
-  <select id="assign-to-sel">
+  <select id="assign-to-sel" style="margin-top:4px">
     <option value="">— Select Alliance Manager —</option>
     ${partners.map(p=>`<option value="${p.id}"${existing?.assignedTo===p.id?' selected':''}>${p.name}</option>`).join('')}
   </select>
+  ${partners.length===0?'<div style="font-size:11px;color:#e74c3c;margin-top:4px">No other Alliance Managers available.</div>':''}
 </div>
 <div style="display:flex;gap:9px">
-  <button class="abtn abtn-blue" onclick="confirmAssignAI('${accountId}','${stage}',${itemIdx},'${itemText.replace(/'/g,"\\'")}','${existing?.id||''}')">Assign</button>
-  <button class="abtn-sm btn-ghost" style="padding:6px 12px" onclick="closeM()">Cancel</button>
-</div>`};
-  R();
+  <button class="abtn abtn-blue" onclick="confirmAssignAI()">Assign</button>
+  <button class="abtn-sm btn-ghost" style="padding:6px 12px" onclick="closeMDom()">Cancel</button>
+</div>`;
+
+  /* Inject overlay directly into DOM — NO R() call so page state is preserved */
+  let ov=document.getElementById('_assign-overlay');
+  if(!ov){ov=document.createElement('div');ov.id='_assign-overlay';document.body.appendChild(ov);}
+  ov.innerHTML=`<div class="overlay" onclick="closeMDom()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px">
+    <div class="mbox" onclick="event.stopPropagation()" style="background:#fff;border-radius:12px;padding:22px 24px;max-width:480px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)">${modalHTML}</div></div>`;
+  ov.style.display='block';
 }
 
-async function confirmAssignAI(accountId,stage,itemIdx,itemText,existingId){
+function closeMDom(){
+  const ov=document.getElementById('_assign-overlay');
+  if(ov)ov.style.display='none';
+  _assignCtx=null;
+}
+
+async function confirmAssignAI(){
+  if(!_assignCtx)return sal('No assignment context found.','ae');
+  const{accountId,stage,itemIdx,itemText,existingId}=_assignCtx;
   const assignTo=document.getElementById('assign-to-sel')?.value;
   if(!assignTo)return sal('Please select an Alliance Manager','ae');
   const row={
@@ -1467,8 +1497,14 @@ async function confirmAssignAI(accountId,stage,itemIdx,itemText,existingId){
   if(fresh)DB.assignments=fresh.map(mapAssignment);
   const acc=DB.accounts.find(a=>a.id===accountId);
   await sbLog('Assigned action item',acc?.companyName||accountId,'action_item','',gu(assignTo).name,{accountId});
-  closeM();
+  closeMDom();
   sal('Action item assigned to '+gu(assignTo).name+'!','as');
+  // Refresh just the action item badge without full page re-render
+  const aiWrapper=document.getElementById('ai-wrapper')||document.getElementById('admin-ai-wrapper');
+  if(aiWrapper){
+    const sd=getSDStage(accountId,stage);
+    if(sd)aiWrapper.innerHTML=buildStageActionItems(sd,accountId,true);
+  }
 }
 
 async function updateAssignmentStatus(assignId,newStatus){
