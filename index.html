@@ -490,7 +490,8 @@ async function rs1(){
 }
 async function rs2(){RS=1;REMAIL='';AL=null;R();}
 async function rs3(){}
-async function doLogout(){CU=null;AL=null;ATAB='login';localStorage.removeItem('pt_session');R();}
+async function doLogout(){CU=null;AL=null;PAGE='dashboard';ATAB='login';FILTERS={status:'',partner:'',stage:'',company:''};location.hash='';localStorage.removeItem('pt_session');R();}
+function logout(){doLogout();}
 
 /* ─────────────────────────── APP SHELL ─────────────────────────── */
 function getPageHTML(id){
@@ -670,18 +671,12 @@ function pgDash(){
 <div class="kcard kc-g"><div class="klbl">Green</div><div class="knum">${grn}</div><div class="ksub">On track</div></div>
 <div class="kcard kc-p"><div class="klbl">Overdue</div><div class="knum">${od}</div><div class="ksub">AM Connect OD</div></div>
 </div>
-<div class="card"><div style="display:flex;gap:9px;flex-wrap:wrap;align-items:flex-end">
-  <div class="tf-g"><div class="tf-l">Status</div><select class="tf-s" onchange="FILTERS.status=this.value;R()"><option value="">All</option><option value="red"${FILTERS.status==='red'?' selected':''}>Red</option><option value="yellow"${FILTERS.status==='yellow'?' selected':''}>Yellow</option><option value="green"${FILTERS.status==='green'?' selected':''}>Green</option></select></div>
-  ${isA()?`<div class="tf-g"><div class="tf-l">Alliance Manager</div><select class="tf-s" onchange="FILTERS.partner=this.value;R()"><option value="">All</option>${pts.map(p=>`<option value="${p.id}"${FILTERS.partner===p.id?' selected':''}>${p.name}</option>`).join('')}</select></div>`:''}
-  <div class="tf-g"><div class="tf-l">Stage</div><select class="tf-s" onchange="FILTERS.stage=this.value;R()"><option value="">All</option>${DB.stages.map(s=>`<option value="${s.id}"${FILTERS.stage===s.id?' selected':''}>${s.name}</option>`).join('')}</select></div>
-  <button class="abtn-sm btn-ghost" style="padding:4px 10px;align-self:flex-end" onclick="FILTERS={status:'',partner:'',stage:''};R()">Clear</button>
-</div></div>
+${filterBarHTML(isA(),myAll)}
 <div class="card"><div class="ctitle">Accounts Overview</div>
 <div class="tscroll"><table style="min-width:500px"><thead><tr><th>Account</th>${isA()?'<th>Alliance Manager</th>':''}<th>Stage</th><th>Status</th><th>AM Connect</th><th>OD</th></tr></thead>
 <tbody>${f.slice(0,8).map(a=>`<tr><td><strong>${a.companyName}</strong><div style="font-size:10px;color:var(--muted)">${a.accountGroup}</div></td>${isA()?`<td style="font-size:11px">${a.partnerName}</td>`:''}<td style="font-size:11px">${a.stageName}</td><td><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green'}</span></td><td style="font-size:11px">${a.am?.connectStage||'<span style="color:var(--muted)">Not updated</span>'}</td><td>${a.amOD>0?`<span class="oday">+${a.amOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td></tr>`).join('')}</tbody></table></div></div>
 <div style="display:flex;gap:10px;justify-content:center;margin-top:4px">
 </div>
-${filterBarHTML(isA(),myAll)}
 <div class="g3" style="margin-top:14px">
   <div class="card" style="padding:14px"><div class="ctitle">Pipeline Stage Distribution</div><div style="position:relative;height:170px"><canvas id="stageBar"></canvas></div></div>
   <div class="card" style="padding:14px"><div class="ctitle">Connect Stage Progress</div>
