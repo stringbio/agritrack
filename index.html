@@ -785,7 +785,7 @@ function pgMyAccs(){
   <div class="divlbl" style="margin-top:4px">AM Connect Update</div>
   <div class="fg" style="margin-bottom:10px">
     <label class="fl">Stage</label>
-    <select id="sel-am-stage" onchange="SEL_STAGE_AM=this.value;onStageSelect('${selAcc.id}')" style="max-width:100%">
+    <select id="sel-am-stage" onchange="SEL_STAGE_AM=this.value;R()" style="max-width:100%">
       <option value="">— Select Stage —</option>
       ${AM_STAGES.map(s=>`<option value="${s}"${SEL_STAGE_AM===s?' selected':''}>  ${s}${getSDStage(selAcc.id,s)?' ✓':''}</option>`).join('')}
     </select>
@@ -898,7 +898,7 @@ function adminAMSection(sid){
 ${hasData?`<div class="infob" style="margin-bottom:10px">This account has data in ${stageDataForAcc.length} stage(s).</div>`:''}
 <div class="fg" style="margin-bottom:10px">
   <label class="fl">Select Stage to Edit</label>
-  <select id="sel-admin-stage" onchange="SEL_STAGE_ADMIN=this.value;onAdminStageSelect('${sid}')" style="max-width:300px">
+  <select id="sel-admin-stage" onchange="SEL_STAGE_ADMIN=this.value;R()" style="max-width:300px">
     <option value="">— Select Stage —</option>
     ${AM_STAGES.map(s=>`<option value="${s}"${SEL_STAGE_ADMIN===s?' selected':''}>  ${s}${getSDStage(sid,s)?' ✓':''}</option>`).join('')}
   </select>
