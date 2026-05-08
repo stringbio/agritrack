@@ -325,6 +325,7 @@ function mapStageData(r){
     connectDate:r.connect_date||'',
     nextConnectDate:r.next_connect_date||'',
     actionItems:r.action_items||[{text:'',permanent:true}],
+    quarterlyTargets:r.quarterly_targets||{q1:null,q2:null,q3:null,q4:null},
     updatedAt:r.updated_at?r.updated_at.split('T')[0]:today()
   };
 }
@@ -654,6 +655,23 @@ function onStageSelect(accountId){
   if(ncdEl)ncdEl.value=ex?.nextConnectDate||'';
   const wrapper=document.getElementById('ai-wrapper');
   if(wrapper)wrapper.innerHTML=buildStageActionItems(ex,accountId,true);
+  /* Show/hide quarterly targets for Commercial stage */
+  const existingQT=document.getElementById('quarterly-targets-section');
+  if(stage==='Commercial'){
+    const qtHTML=buildQuarterlyTargets(ex||{stage:'Commercial',quarterlyTargets:{q1:null,q2:null,q3:null,q4:null}});
+    if(existingQT)existingQT.outerHTML=qtHTML;
+    else{const w=document.getElementById('ai-wrapper');if(w)w.insertAdjacentHTML('afterend',qtHTML);}
+  }else{
+    if(existingQT)existingQT.remove();
+  }
+  /* Update assigned items tracking panel */
+  const trackEl=document.getElementById('am-tracking-panel');
+  if(trackEl){
+    const stageItems=DB.assignments.filter(a=>a.accountId===accountId&&a.stage===stage);
+    trackEl.innerHTML=stageItems.length?assignedItemsPanel(accountId,stage,false):'';
+  }
+  const odEl=document.getElementById('am-od-disp');
+  if(odEl){const od=ex?.nextConnectDate?odD(ex.nextConnectDate):0;odEl.style.display=od>0?'block':'none';if(od>0)odEl.textContent='+'+od+' days overdue on next connect';}
 }
 
 /* ─────────────────────────── PAGES ─────────────────────────── */
@@ -779,15 +797,16 @@ function pgMyAccs(){
     <div class="divlbl">Action Items <span style="font-weight:400;font-size:10px;color:var(--muted)">— 1 always shown, up to 5 max, empty fields excluded from reports</span></div>
     <div id="ai-wrapper">${buildStageActionItems(selSD,selAcc.id,true)}</div>
   </div>
+  ${buildQuarterlyTargets(selSD)}
   <div style="display:flex;gap:9px;margin-top:14px">
     <button class="abtn abtn-blue" onclick="saveMyStageData('${selAcc.id}')">Save Stage Data</button>
   </div>
   <!-- Assigned items tracking for this account+stage — visible to primary AM -->
-  ${(()=>{
+  <div id="am-tracking-panel">${(()=>{
     const selStage=document.getElementById('sel-am-stage')?.value||AM_STAGES[0];
     const myItems=DB.assignments.filter(a=>a.accountId===selAcc.id&&a.stage===selStage);
     return myItems.length?assignedItemsPanel(selAcc.id,selStage,false):'';
-  })()}
+  })()}</div>
   <div class="divlbl" style="margin-top:16px">All Stage Summary</div>
   <div class="tscroll"><table style="min-width:400px"><thead><tr><th>Stage</th><th>Connect Date</th><th>Next Connect</th><th>OD</th><th>Items</th></tr></thead>
   <tbody>${AM_STAGES.map(s=>{const sd=getSDStage(selAcc.id,s);if(!sd)return`<tr><td style="color:var(--muted);font-size:11px">${s}</td><td colspan="4" style="color:var(--muted);font-size:10px">No data yet</td></tr>`;const od=odD(sd.nextConnectDate);const filled=sd.actionItems.filter(i=>i.text);return`<tr><td style="font-size:11px;font-weight:600">${s}</td><td style="font-size:11px">${fmtD(sd.connectDate)}</td><td style="font-size:11px">${fmtD(sd.nextConnectDate)}</td><td>${od>0?`<span class="oday">+${od}d</span>`:'<span style="color:#3aaa5e;font-size:10px">OK</span>'}</td><td style="font-size:10px">${filled.length?filled.map(i=>i.text).join(', ').slice(0,40)+'…':'—'}</td></tr>`;}).join('')}
@@ -831,10 +850,10 @@ ${DB.accounts.map(a=>`<div onclick="window._aSel='${a.id}';R()" style="padding:9
 <div class="divlbl">Account Overview</div>
 <div class="fg4">
 <div class="fg full"><label class="fl">Assign to Alliance Manager *</label>
-<select id="fa-p"${acc?` disabled title="Ownership cannot be reassigned"`:''}>
+<select id="fa-p">
 <option value="">-- Select Alliance Manager --</option>
 ${DB.users.filter(u=>u.role==='partner').map(p=>`<option value="${p.id}"${acc?.assignedPartnerId===p.id?' selected':''}>${p.name}</option>`).join('')}</select>
-${acc?`<div style="font-size:10px;color:var(--muted);margin-top:2px">&#128274; Ownership is fixed. Cannot be reassigned.</div>`:''}
+${acc?`<div style="font-size:10px;color:var(--muted);margin-top:2px">&#9432; Changing ownership will reassign this account to the selected Alliance Manager.</div>`:''}
 </div>
 <div class="fg"><label class="fl">Company Name *</label><input type="text" id="fa-cn" value="${acc?.companyName||''}"></div>
 <div class="fg"><label class="fl">Company Email</label><input type="email" id="fa-ce" value="${acc?.companyEmail||''}"></div>
@@ -889,8 +908,31 @@ ${hasData?`<div class="infob" style="margin-bottom:10px">This account has data i
   <div class="divlbl">Action Items <span style="font-weight:400;font-size:10px;color:var(--muted)">— 1 always present, up to 5 max</span></div>
   <div id="admin-ai-wrapper">${buildStageActionItems(existing,sid,true)}</div>
 </div>
+${buildQuarterlyTargets(existing||{stage:selStage})}
 <button class="abtn abtn-blue" style="margin-top:12px" onclick="saveAdminStageData('${sid}')">Save Stage Data</button>
-${(()=>{const allItems=DB.assignments.filter(a=>a.accountId===sid);return allItems.length?`<div style="margin-top:12px">${assignedItemsPanel(sid,null,true)}</div>`:'';})()}
+<div id="admin-tracking-panel" style="margin-top:4px">${(()=>{
+  /* Show ONLY the selected stage's assigned items — dynamic with stage selector */
+  const curStage=document.getElementById('sel-admin-stage')?.value||AM_STAGES[0];
+  const stageItems=DB.assignments.filter(a=>a.accountId===sid&&a.stage===curStage);
+  return stageItems.length?assignedItemsPanel(sid,curStage,true):'';
+})()}</div>
+<!-- All Stage Summary — same as AM view -->
+<div class="divlbl" style="margin-top:16px">All Stage Summary</div>
+<div class="tscroll"><table style="min-width:400px"><thead><tr><th>Stage</th><th>Connect Date</th><th>Next Connect</th><th>OD</th><th>Items</th></tr></thead>
+<tbody>${AM_STAGES.map(s=>{
+  const sd=getSDStage(sid,s);
+  if(!sd)return`<tr><td style="color:var(--muted);font-size:11px">${s}</td><td colspan="4" style="color:var(--muted);font-size:10px">No data yet</td></tr>`;
+  const od=odD(sd.nextConnectDate);
+  const filled=sd.actionItems.filter(i=>i.text);
+  const assigned=DB.assignments.filter(a=>a.accountId===sid&&a.stage===s);
+  return`<tr>
+<td style="font-size:11px;font-weight:600">${s}</td>
+<td style="font-size:11px">${fmtD(sd.connectDate)}</td>
+<td style="font-size:11px">${fmtD(sd.nextConnectDate)}</td>
+<td>${od>0?`<span class="oday">+${od}d</span>`:'<span style="color:#3aaa5e;font-size:10px">OK</span>'}</td>
+<td style="font-size:10px">${filled.length?filled.map(i=>i.text).join(', ').slice(0,40)+'…':'—'}${assigned.length?` <span style="background:#e8f0fb;color:#1a5276;padding:1px 5px;border-radius:8px;font-size:9px;margin-left:3px">&#128100;${assigned.length}</span>`:''}
+</td></tr>`;}).join('')}
+</tbody></table></div>
 </div>`;}
 
 function pgFU(){
@@ -1519,7 +1561,56 @@ async function updateAssignmentStatus(assignId,newStatus){
 }
 
 
-/* ── Assigned Action Items tracking panel ──────────────────────────── */
+/* ── Quarterly Target Acres fields (Commercial stage only) ─────────── */
+function buildQuarterlyTargets(stageData){
+  if(!stageData||stageData.stage!=='Commercial')return '';
+  const qt=stageData.quarterlyTargets||{q1:null,q2:null,q3:null,q4:null};
+  return `<div id="quarterly-targets-section" style="margin-top:12px;padding-top:12px;border-top:1px solid #f0f3f8">
+<div class="divlbl" style="margin-bottom:8px">Target Acres
+  <span style="font-weight:400;font-size:10px;color:var(--muted)"> — Commercial stage targets (Acres)</span>
+</div>
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+  <div class="fg"><label class="fl" style="font-size:11px;font-weight:600">Q1</label>
+    <input type="number" id="qt-q1" step="0.01" min="0" placeholder="0.00" value="${qt.q1||''}"></div>
+  <div class="fg"><label class="fl" style="font-size:11px;font-weight:600">Q2</label>
+    <input type="number" id="qt-q2" step="0.01" min="0" placeholder="0.00" value="${qt.q2||''}"></div>
+  <div class="fg"><label class="fl" style="font-size:11px;font-weight:600">Q3</label>
+    <input type="number" id="qt-q3" step="0.01" min="0" placeholder="0.00" value="${qt.q3||''}"></div>
+  <div class="fg"><label class="fl" style="font-size:11px;font-weight:600">Q4</label>
+    <input type="number" id="qt-q4" step="0.01" min="0" placeholder="0.00" value="${qt.q4||''}"></div>
+</div>
+<div style="font-size:10px;color:var(--muted);margin-top:5px">
+  Total: <strong>${((Number(qt.q1)||0)+(Number(qt.q2)||0)+(Number(qt.q3)||0)+(Number(qt.q4)||0)).toFixed(1)} Acres</strong>
+</div>
+</div>`;
+}
+
+function collectQuarterlyTargets(stage){
+  if(stage!=='Commercial')return null;
+  return{
+    q1:parseFloat(document.getElementById('qt-q1')?.value)||null,
+    q2:parseFloat(document.getElementById('qt-q2')?.value)||null,
+    q3:parseFloat(document.getElementById('qt-q3')?.value)||null,
+    q4:parseFloat(document.getElementById('qt-q4')?.value)||null,
+  };
+}
+
+function renderQTSection(stageData, wrapperId){
+  const el=document.getElementById(wrapperId);
+  if(!el)return;
+  const existing=el.innerHTML.includes('quarterly-targets-section');
+  if(!existing){
+    el.insertAdjacentHTML('afterend',buildQuarterlyTargets(stageData));
+  }else{
+    const qts=document.getElementById('quarterly-targets-section');
+    if(qts){
+      if(stageData&&stageData.stage==='Commercial')qts.outerHTML=buildQuarterlyTargets(stageData);
+      else qts.remove();
+    }
+  }
+}
+
+
 function assignedItemsPanel(accountId, stage, forAdmin){
   const items = DB.assignments.filter(a =>
     a.accountId === accountId && (!stage || a.stage === stage)
@@ -1734,7 +1825,9 @@ async function saveMyStageData(accountId){
   const ncd=document.getElementById('f-am-next-date')?.value||null;
   if(cd&&ncd&&ncd<cd)return sal('Warning: Next Connect Date is before Connect Date','ae');
   const items=collectAI();
+  const qt=collectQuarterlyTargets(stage);
   const row={account_id:accountId,stage,connect_date:cd||null,next_connect_date:ncd||null,action_items:items,updated_at:new Date().toISOString()};
+  if(qt!==null)row.quarterly_targets=qt;
   const{error}=await SB.from('pt_stage_data').upsert([row],{onConflict:'account_id,stage'});
   if(error)return sal('Error: '+error.message,'ae');
   const{data:fresh}=await SB.from('pt_stage_data').select('*').eq('account_id',accountId);
@@ -1751,7 +1844,9 @@ async function saveAdminStageData(accountId){
   const cd=document.getElementById('fa-acd')?.value||null;
   const ncd=document.getElementById('fa-ncd')?.value||null;
   const items=collectAI();
+  const qt=collectQuarterlyTargets(stage);
   const row={account_id:accountId,stage,connect_date:cd||null,next_connect_date:ncd||null,action_items:items,updated_at:new Date().toISOString()};
+  if(qt!==null)row.quarterly_targets=qt;
   const{error}=await SB.from('pt_stage_data').upsert([row],{onConflict:'account_id,stage'});
   if(error)return sal('Error: '+error.message,'ae');
   const{data:fresh}=await SB.from('pt_stage_data').select('*').eq('account_id',accountId);
@@ -1771,13 +1866,29 @@ function onAdminStageSelect(accountId){
   if(ncdEl)ncdEl.value=ex?.nextConnectDate||'';
   const wrapper=document.getElementById('admin-ai-wrapper');
   if(wrapper)wrapper.innerHTML=buildStageActionItems(ex,accountId,true);
+  /* Show/hide quarterly targets for Commercial stage */
+  const existingQT=document.getElementById('quarterly-targets-section');
+  if(stage==='Commercial'){
+    const qtHTML=buildQuarterlyTargets(ex||{stage:'Commercial',quarterlyTargets:{q1:null,q2:null,q3:null,q4:null}});
+    if(existingQT)existingQT.outerHTML=qtHTML;
+    else{const w=document.getElementById('admin-ai-wrapper');if(w)w.insertAdjacentHTML('afterend',qtHTML);}
+  }else{
+    if(existingQT)existingQT.remove();
+  }
+  /* Update assigned items tracking panel */
+  const trackingEl=document.getElementById('admin-tracking-panel');
+  if(trackingEl){
+    const stageItems=DB.assignments.filter(a=>a.accountId===accountId&&a.stage===stage);
+    trackingEl.innerHTML=stageItems.length?assignedItemsPanel(accountId,stage,true):'';
+  }
 }
 
 async function saveAcc(id){
   const cn=(document.getElementById('fa-cn')?.value||'').trim();
   if(!cn)return sal('Company name is required','ae');
   const existingAcc=id?DB.accounts.find(a=>a.id===id):null;
-  const partnerId=existingAcc?existingAcc.assignedPartnerId:(document.getElementById('fa-p')?.value||'');
+  // Admin can always reassign — use dropdown value for both new and existing accounts
+  const partnerId=document.getElementById('fa-p')?.value||existingAcc?.assignedPartnerId||'';
   const row={
     id:id||uid(),company_name:cn,company_email:document.getElementById('fa-ce')?.value||'',
     focus_area:document.getElementById('fa-fa')?.value||'',account_group:document.getElementById('fa-ag')?.value||'',
