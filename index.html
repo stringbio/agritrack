@@ -492,31 +492,55 @@ async function doLogout(){CU=null;AL=null;ATAB='login';localStorage.removeItem('
 
 /* ─────────────────────────── APP SHELL ─────────────────────────── */
 function appH(){
-  let tabs,pgs;
+  let tabs;
   if(!isA()){
-    tabs=[{id:'dashboard',label:'My Dashboard'}];
-    pgs={dashboard:pgDash()};
-    tabs.push({id:'overall-dashboard',label:'Overall Dashboard'});pgs['overall-dashboard']=pgOverallDash();
-    if(canPartner('viewMyAccounts')){tabs.push({id:'my-accounts',label:'My Account Records'});pgs['my-accounts']=pgMyAccs();}
-    if(canPartner('viewFollowups')){tabs.push({id:'followups',label:'Follow-Up Tracker'});pgs.followups=pgFU();}
-    tabs.push({id:'action-items',label:'Action Items'});pgs['action-items']=pgActionItems();
-    tabs.push({id:'myaccount',label:'My Account'});pgs.myaccount=pgMyAcc();
+    tabs=[
+      {id:'dashboard',label:'My Dashboard'},
+      {id:'overall-dashboard',label:'Overall Dashboard'},
+    ];
+    if(canPartner('viewMyAccounts'))tabs.push({id:'my-accounts',label:'My Account Records'});
+    if(canPartner('viewFollowups'))tabs.push({id:'followups',label:'Follow-Up Tracker'});
+    tabs.push({id:'action-items',label:'Action Items'});
+    tabs.push({id:'myaccount',label:'My Account'});
   } else {
     tabs=[{id:'dashboard',label:'Dashboard'}];
-    pgs={dashboard:pgDash()};
-    if(can('viewFollowups')){tabs.push({id:'followups',label:'Follow-Up Tracker'});pgs.followups=pgFU();}
-    if(can('manageAccounts')){tabs.push({id:'account-entry',label:'Account Records'});pgs['account-entry']=pgAccEntry();}
-    if(can('viewAnalytics')){tabs.push({id:'analytics',label:'Analytics'});pgs.analytics=pgAna();}
-    if(can('viewReports')){tabs.push({id:'reports',label:'Reports & Audit'});pgs.reports=pgRep();}
-    tabs.push({id:'admin',label:'Admin Panel'});pgs.admin=pgAdmin();
-    tabs.push({id:'myaccount',label:'My Account'});pgs.myaccount=pgMyAcc();
+    if(can('viewFollowups'))tabs.push({id:'followups',label:'Follow-Up Tracker'});
+    if(can('manageAccounts'))tabs.push({id:'account-entry',label:'Account Records'});
+    if(can('viewAnalytics'))tabs.push({id:'analytics',label:'Analytics'});
+    if(can('viewReports'))tabs.push({id:'reports',label:'Reports & Audit'});
+    tabs.push({id:'admin',label:'Admin Panel'});
+    tabs.push({id:'myaccount',label:'My Account'});
   }
+  const validIds=tabs.map(t=>t.id);
+  if(!validIds.includes(PAGE))PAGE=tabs[0].id;
+  const pgContent=renderPage(PAGE);
   return`<div class="app">
 <div class="topbar"><h1><div class="live-dot"></div>${LOGO_IMG_TOPBAR} AgriTrack</h1>
 <div class="topbar-r"><button class="ubtn" onclick="PAGE='myaccount';R()">${CU.name.split(' ').map(w=>w[0]).join('').slice(0,2)} ${CU.name}</button><button class="ubtn" onclick="doLogout()">Sign Out</button></div></div>
-<div class="nav-tabs">${tabs.map(t=>`<button class="ntab${PAGE===t.id?' act':''}" onclick="PAGE='${t.id}';AL=null;R()">${t.label}</button>`).join('')}</div>
-<div class="content">${AL?`<div class="alert ${AL.type}">${AL.msg}</div>`:''}${Object.entries(pgs).map(([k,v])=>`<div class="pg${PAGE===k?' act':''}">${v}</div>`).join('')}</div>
+<div class="nav-tabs">${tabs.map(t=>`<button class="ntab${PAGE===t.id?' act':''}" onclick="PAGE='${t.id}';AL=null;FILTERS={status:'',partner:'',stage:'',company:''};R()">${t.label}</button>`).join('')}</div>
+<div class="content">${AL?`<div class="alert ${AL.type}">${AL.msg}</div>`:''}${pgContent}</div>
 ${MODAL?mH():''}</div>`;}
+
+function renderPage(p){
+  if(!isA()){
+    if(p==='dashboard')return pgDash();
+    if(p==='overall-dashboard')return pgOverallDash();
+    if(p==='my-accounts')return pgMyAccs();
+    if(p==='followups')return pgFU();
+    if(p==='action-items')return pgActionItems();
+    if(p==='myaccount')return pgMyAcc();
+    return pgDash();
+  } else {
+    if(p==='dashboard')return pgDash();
+    if(p==='followups')return pgFU();
+    if(p==='account-entry')return pgAccEntry();
+    if(p==='analytics')return pgAna();
+    if(p==='reports')return pgRep();
+    if(p==='admin')return pgAdmin();
+    if(p==='myaccount')return pgMyAcc();
+    return pgDash();
+  }
+}
 
 /* ─────────────────────────── DATA HELPERS ─────────────────────────── */
 function enAccs(){return DB.accounts.map(a=>{const am=getAM(a.id);return{...a,am,partnerName:gu(a.assignedPartnerId).name,stageName:gs(a.stageId).name,amOD:am?odD(am.nextConnectDateDM):0};});}
@@ -648,8 +672,6 @@ function pgDash(){
 <div class="card"><div class="ctitle">Accounts Overview</div>
 <div class="tscroll"><table style="min-width:500px"><thead><tr><th>Account</th>${isA()?'<th>Alliance Manager</th>':''}<th>Stage</th><th>Status</th><th>AM Connect</th><th>OD</th></tr></thead>
 <tbody>${f.slice(0,8).map(a=>`<tr><td><strong>${a.companyName}</strong><div style="font-size:10px;color:var(--muted)">${a.accountGroup}</div></td>${isA()?`<td style="font-size:11px">${a.partnerName}</td>`:''}<td style="font-size:11px">${a.stageName}</td><td><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green'}</span></td><td style="font-size:11px">${a.am?.connectStage||'<span style="color:var(--muted)">Not updated</span>'}</td><td>${a.amOD>0?`<span class="oday">+${a.amOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td></tr>`).join('')}</tbody></table></div></div>
-<div style="display:flex;gap:10px;justify-content:center;margin-top:4px">
-${isA()?`<button class="abtn abtn-blue" onclick="PAGE='account-entry';R()">Manage Account Records</button>`:''}</div>
 ${filterBarHTML(isA(),myAll)}
 <div class="g3" style="margin-top:14px">
   <div class="card" style="padding:14px"><div class="ctitle">Pipeline Stage Distribution</div><div style="position:relative;height:170px"><canvas id="stageBar"></canvas></div></div>
@@ -1390,33 +1412,39 @@ ${myItems.map(item=>{
 }
 
 /* ─────────────────────────── ASSIGNMENT MODAL ─────────────────────────── */
+/* Store assignment context in a JS variable — avoids quote-escaping bugs */
+let ASSIGN_CTX=null;
+
 function openAssignModal(accountId,stage,itemIdx,itemText){
   const acc=DB.accounts.find(a=>a.id===accountId);
-  const partners=DB.users.filter(u=>u.role==='partner'&&u.id!==acc?.assignedPartnerId);
+  const partners=DB.users.filter(u=>u.role==='partner');
   const existing=DB.assignments.find(a=>a.accountId===accountId&&a.stage===stage&&a.actionItemIdx===itemIdx);
-
-  MODAL={type:'assign-ai',html:`<div style="font-size:16px;font-weight:700;margin-bottom:4px">Assign Action Item</div>
-<div style="font-size:11px;color:var(--muted);margin-bottom:14px">${acc?.companyName||'—'} &middot; Stage: ${stage} &middot; Item #${itemIdx+1}</div>
+  ASSIGN_CTX={accountId,stage,itemIdx,itemText,existingId:existing?.id||''};
+  const selOpts=partners.map(p=>`<option value="${p.id}"${existing?.assignedTo===p.id?' selected':''}>${p.name}${acc?.assignedPartnerId===p.id?' (Primary AM)':''}</option>`).join('');
+  MODAL={type:'assign-ai',html:`<div style="font-size:16px;font-weight:700;margin-bottom:6px">Assign Action Item</div>
+<div style="font-size:11px;color:var(--muted);margin-bottom:14px">${acc?.companyName||'—'} &middot; ${stage} &middot; Item #${itemIdx+1}</div>
 <div style="background:#f4f6fb;border-radius:7px;padding:10px 12px;margin-bottom:14px">
-  <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:4px">Action Item Text</div>
-  <div style="font-size:13px;font-weight:600;color:#1a1a2e">${itemText||'—'}</div>
+  <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Action Item</div>
+  <div style="font-size:13px;font-weight:600;color:#1a1a2e">${itemText||'(no text)'}</div>
 </div>
-${existing?`<div style="background:#fff8f0;border:1px solid #ffcc80;border-radius:7px;padding:8px 11px;margin-bottom:12px;font-size:12px">Currently assigned to <strong>${gu(existing.assignedTo).name}</strong>. Saving will reassign.</div>`:''}
-<div class="fg" style="margin-bottom:12px">
-  <label class="fl">Assign To Alliance Manager</label>
-  <select id="assign-to-sel">
+${existing?`<div style="background:#fff8f0;border:1px solid #ffcc80;border-radius:7px;padding:8px 11px;margin-bottom:12px;font-size:12px">&#9888; Currently assigned to <strong>${gu(existing.assignedTo).name}</strong>. Saving will reassign.</div>`:''}
+<div class="fg" style="margin-bottom:14px">
+  <label class="fl">Assign To</label>
+  <select id="assign-to-sel" style="background:#fff">
     <option value="">— Select Alliance Manager —</option>
-    ${partners.map(p=>`<option value="${p.id}"${existing?.assignedTo===p.id?' selected':''}>${p.name}</option>`).join('')}
+    ${selOpts}
   </select>
 </div>
 <div style="display:flex;gap:9px">
-  <button class="abtn abtn-blue" onclick="confirmAssignAI('${accountId}','${stage}',${itemIdx},'${itemText.replace(/'/g,"\\'")}','${existing?.id||''}')">Assign</button>
+  <button class="abtn abtn-blue" onclick="confirmAssignAI()">Assign</button>
   <button class="abtn-sm btn-ghost" style="padding:6px 12px" onclick="closeM()">Cancel</button>
 </div>`};
   R();
 }
 
-async function confirmAssignAI(accountId,stage,itemIdx,itemText,existingId){
+async function confirmAssignAI(){
+  if(!ASSIGN_CTX)return sal('Assignment context lost — please try again.','ae');
+  const{accountId,stage,itemIdx,itemText,existingId}=ASSIGN_CTX;
   const assignTo=document.getElementById('assign-to-sel')?.value;
   if(!assignTo)return sal('Please select an Alliance Manager','ae');
   const row={
@@ -1438,6 +1466,7 @@ async function confirmAssignAI(accountId,stage,itemIdx,itemText,existingId){
   if(fresh)DB.assignments=fresh.map(mapAssignment);
   const acc=DB.accounts.find(a=>a.id===accountId);
   await sbLog('Assigned action item',acc?.companyName||accountId,'action_item','',gu(assignTo).name,{accountId});
+  ASSIGN_CTX=null;
   closeM();
   sal('Action item assigned to '+gu(assignTo).name+'!','as');
 }
