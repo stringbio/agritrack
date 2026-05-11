@@ -810,7 +810,7 @@ function buildStageActionItems(stageData,accountId,showAssign){
   const canAssign=showAssign&&accId&&stage&&(isA()||(accId&&DB.accounts.find(a=>a.id===accId)?.assignedPartnerId===CU.id));
   const partners=DB.users.filter(u=>u.role==='partner'&&u.id!==CU.id);
 
-  let html='<div id="ai-container">';
+  let html='<div id="ai-container" data-accid="'+accId+'" data-stage="'+stage+'">';
   items.forEach((item,idx)=>{
     const isFirst=idx===0;
     // find existing assignment for this item
@@ -849,15 +849,58 @@ function buildStageActionItems(stageData,accountId,showAssign){
   return html;
 }
 function clearAI(idx, btn){
+  /* Double confirmation for clearing item 1 */
+  const accId=btn?.dataset?.accid||'';
+  const stage=btn?.dataset?.stage||'';
   const inp=document.getElementById('ai-text-'+idx);
+  const itemText=inp?.value?.trim()||'';
+  const existing=DB.assignments.find(a=>a.accountId===accId&&a.stage===stage&&a.actionItemIdx===0);
+  const assignNote=existing
+    ?`<div style="background:#fff8f0;border:1px solid #ffcc80;border-radius:6px;padding:7px 10px;margin-top:8px;font-size:11px">&#9888; Also removes assignment from <strong>${getDisplayName(gu(existing.assignedTo).name,18)}</strong>.</div>`
+    :'';
+
+  const ov=document.createElement('div');
+  ov.id='_clear-ai-overlay';
+  ov.innerHTML=`<div class="overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;border-radius:12px;padding:22px 24px;max-width:400px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <div style="font-size:15px;font-weight:700;margin-bottom:6px">Clear Action Item 1?</div>
+    <div style="font-size:12px;color:#4a5568;margin-bottom:4px">This will clear the text of action item 1:</div>
+    ${itemText?`<div style="background:#f4f6fb;border-radius:6px;padding:8px 10px;font-size:12px;font-weight:600;color:#1a1a2e;margin-bottom:4px">${itemText}</div>`:''}
+    ${assignNote}
+    <div style="font-size:11px;color:var(--muted);margin-top:8px;margin-bottom:16px">The item row stays but the text will be cleared.</div>
+    <div style="display:flex;gap:9px">
+      <button class="abtn" style="background:#e6a817;color:#fff;padding:7px 14px" onclick="clearAI2('${accId}','${stage}')">Yes, Clear</button>
+      <button class="abtn-sm btn-ghost" style="padding:6px 12px" onclick="document.getElementById('_clear-ai-overlay').remove()">Cancel</button>
+    </div>
+  </div></div>`;
+  document.body.appendChild(ov);
+}
+
+async function clearAI2(accId, stage){
+  const ov=document.getElementById('_clear-ai-overlay');
+  if(ov)ov.remove();
+  /* Clear the text in DOM */
+  const inp=document.getElementById('ai-text-0');
   if(inp)inp.value='';
-  // Also remove any assignment for item 1 if it exists
-  if(idx===0&&btn){
-    const accId=btn.dataset.accid;
-    const stage=btn.dataset.stage;
-    const existing=DB.assignments.find(a=>a.accountId===accId&&a.stage===stage&&a.actionItemIdx===0);
-    if(existing) removeAssignInline(existing.id);
+  /* Remove assignment if any */
+  const existing=DB.assignments.find(a=>a.accountId===accId&&a.stage===stage&&a.actionItemIdx===0);
+  if(existing){
+    await SB.from('pt_action_item_assignments').delete().eq('id',existing.id);
+    DB.assignments=DB.assignments.filter(a=>a.id!==existing.id);
   }
+  /* Persist updated action items to DB */
+  const items=collectAI();
+  const sd=getSDStage(accId,stage);
+  if(sd){
+    const row={account_id:accId,stage,connect_date:sd.connectDate||null,
+      next_connect_date:sd.nextConnectDate||null,action_items:items,
+      updated_at:new Date().toISOString()};
+    const{error}=await SB.from('pt_stage_data').upsert([row],{onConflict:'account_id,stage'});
+    if(error)return sal('Error saving: '+error.message,'ae');
+    const{data:fresh}=await SB.from('pt_stage_data').select('*').eq('account_id',accId);
+    if(fresh)DB.stageData=DB.stageData.filter(s=>s.accountId!==accId).concat(fresh.map(mapStageData));
+  }
+  sal('Action item 1 cleared and saved.','as');
 }
 
 async function removeAIWithAssign(idx, accId, stage){
@@ -908,14 +951,28 @@ async function confirmDeleteAI2(idx, accId, stage){
 async function executeDeleteAI(idx, accId, stage){
   const ov = document.getElementById('_del-ai-overlay2');
   if(ov) ov.remove();
-  /* Always look up fresh from DB — never rely on string-passed IDs */
+  /* Delete any assignment for this item */
   const freshAssign = DB.assignments.find(a=>a.accountId===accId&&a.stage===stage&&a.actionItemIdx===idx);
   if(freshAssign){
     const{error}=await SB.from('pt_action_item_assignments').delete().eq('id',freshAssign.id);
     if(!error) DB.assignments = DB.assignments.filter(a=>a.id!==freshAssign.id);
   }
+  /* Remove from DOM */
   removeAI(idx);
-  sal('Action item deleted.','as');
+  /* CRITICAL: persist the updated action items to DB immediately */
+  const items = collectAI();
+  const sd = getSDStage(accId, stage);
+  if(sd){
+    const row={account_id:accId,stage,connect_date:sd.connectDate||null,
+      next_connect_date:sd.nextConnectDate||null,action_items:items,
+      updated_at:new Date().toISOString()};
+    const{error}=await SB.from('pt_stage_data').upsert([row],{onConflict:'account_id,stage'});
+    if(error) return sal('Error saving: '+error.message,'ae');
+    /* Update local cache */
+    const{data:fresh}=await SB.from('pt_stage_data').select('*').eq('account_id',accId);
+    if(fresh) DB.stageData=DB.stageData.filter(s=>s.accountId!==accId).concat(fresh.map(mapStageData));
+  }
+  sal('Action item deleted and saved.','as');
 }
 
 function confirmUnassign(assignId, name){
@@ -981,12 +1038,14 @@ function addAI(){
   const rows=c.querySelectorAll('.ai-row');
   if(rows.length>=5)return;
   const idx=rows.length;
+  /* Read account context from container data attributes */
+  const accId=c.dataset.accid||'';
+  const stage=c.dataset.stage||'';
   const row=document.createElement('div');
   row.className='ai-row';row.id='ai-row-'+idx;
   row.style.cssText='display:flex;align-items:center;gap:6px;margin-bottom:7px';
-  row.innerHTML=`<span style="font-size:10px;font-weight:700;color:var(--muted);min-width:16px">${idx+1}.</span><input type="text" id="ai-text-${idx}" placeholder="Action item ${idx+1}…" style="flex:1;background:#fff"><button type="button" class="abtn-sm btn-red" onclick="removeAI(${idx})" style="padding:2px 8px;font-size:10px;flex-shrink:0">✕</button>`;
+  row.innerHTML=`<span style="font-size:10px;font-weight:700;color:var(--muted);min-width:16px">${idx+1}.</span><input type="text" id="ai-text-${idx}" placeholder="Action item ${idx+1}…" style="flex:1;background:#fff"><button type="button" class="abtn-sm btn-red" data-aidx="${idx}" data-accid="${accId}" data-stage="${stage}" onclick="removeAIWithAssign(parseInt(this.dataset.aidx),this.dataset.accid,this.dataset.stage)" style="padding:2px 8px;font-size:10px;flex-shrink:0" title="Delete this action item">✕</button>`;
   c.appendChild(row);
-  // update add button
   const addBtn=c.nextElementSibling;
   if(addBtn){const total=c.querySelectorAll('.ai-row').length;addBtn.textContent=total>=5?'':'+ Add Action Item ('+total+'/5)';if(total>=5)addBtn.style.display='none';}
 }
@@ -996,11 +1055,19 @@ function removeAI(idx){
   if(row)row.remove();
   // Re-index
   const rows=c.querySelectorAll('.ai-row');
+  const accId=c.dataset?.accid||'';
+  const stage=c.dataset?.stage||'';
   rows.forEach((r,i)=>{
     r.id='ai-row-'+i;
     const lbl=r.querySelector('span');if(lbl)lbl.textContent=(i+1)+'.';
     const inp=r.querySelector('input');if(inp)inp.id='ai-text-'+i;
-    const btn=r.querySelector('button');if(btn&&i>0)btn.setAttribute('onclick','removeAI('+i+')');
+    const btn=r.querySelector('button[data-aidx]')||r.querySelector('button.abtn-sm.btn-red');
+    if(btn&&i>0){
+      btn.dataset.aidx=i;
+      btn.dataset.accid=accId;
+      btn.dataset.stage=stage;
+      btn.setAttribute('onclick','removeAIWithAssign(parseInt(this.dataset.aidx),this.dataset.accid,this.dataset.stage)');
+    }
   });
   const addBtn=c.nextElementSibling;
   if(addBtn){const total=rows.length;addBtn.textContent='+ Add Action Item ('+total+'/5)';addBtn.style.display=total<5?'':'none';}
