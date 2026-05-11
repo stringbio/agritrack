@@ -861,14 +861,59 @@ function clearAI(idx, btn){
 }
 
 async function removeAIWithAssign(idx, accId, stage){
-  // Remove any existing assignment for this item first
-  const existing=DB.assignments.find(a=>a.accountId===accId&&a.stage===stage&&a.actionItemIdx===idx);
-  if(existing){
-    await SB.from('pt_action_item_assignments').delete().eq('id',existing.id);
-    DB.assignments=DB.assignments.filter(a=>a.id!==existing.id);
+  /* Double confirmation for deleting action item */
+  const inp = document.getElementById('ai-text-'+idx);
+  const itemText = inp?.value?.trim() || 'this action item';
+  const existing = DB.assignments.find(a=>a.accountId===accId&&a.stage===stage&&a.actionItemIdx===idx);
+  const assignNote = existing
+    ? `<div style="background:#fff8f0;border:1px solid #ffcc80;border-radius:6px;padding:7px 10px;margin-top:8px;font-size:11px">&#9888; This item is currently assigned to <strong>${getDisplayName(gu(existing.assignedTo).name,18)}</strong>. The assignment will also be removed.</div>`
+    : '';
+
+  const ov = document.createElement('div');
+  ov.id = '_del-ai-overlay';
+  ov.innerHTML = `<div class="overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;border-radius:12px;padding:22px 24px;max-width:400px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <div style="font-size:15px;font-weight:700;margin-bottom:6px">Delete Action Item?</div>
+    <div style="font-size:12px;color:#4a5568;margin-bottom:4px">You are about to delete:</div>
+    <div style="background:#f4f6fb;border-radius:6px;padding:8px 10px;font-size:12px;font-weight:600;color:#1a1a2e;margin-bottom:4px">${itemText}</div>
+    ${assignNote}
+    <div style="font-size:11px;color:#e74c3c;margin-top:8px;margin-bottom:14px">This cannot be undone.</div>
+    <div style="font-size:12px;font-weight:600;margin-bottom:8px">Are you sure you want to delete this action item?</div>
+    <div style="display:flex;gap:9px">
+      <button class="abtn" style="background:#e74c3c;color:#fff;padding:7px 14px" onclick="confirmDeleteAI2(${idx},'${accId}','${stage}','${existing?.id||''}')">Yes, Delete</button>
+      <button class="abtn-sm btn-ghost" style="padding:6px 12px" onclick="document.getElementById('_del-ai-overlay').remove()">Cancel</button>
+    </div>
+  </div></div>`;
+  document.body.appendChild(ov);
+}
+
+async function confirmDeleteAI2(idx, accId, stage, assignId){
+  /* Second confirmation */
+  const ov1 = document.getElementById('_del-ai-overlay');
+  if(ov1) ov1.remove();
+  const ov = document.createElement('div');
+  ov.id = '_del-ai-overlay2';
+  ov.innerHTML = `<div class="overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2100;display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;border-radius:12px;padding:22px 24px;max-width:360px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.4)">
+    <div style="font-size:15px;font-weight:700;color:#e74c3c;margin-bottom:8px">⚠️ Final Confirmation</div>
+    <div style="font-size:13px;color:#2d3748;margin-bottom:16px">This will <strong>permanently delete</strong> this action item. Are you absolutely sure?</div>
+    <div style="display:flex;gap:9px">
+      <button class="abtn" style="background:#e74c3c;color:#fff;padding:7px 14px" onclick="executeDeleteAI(${idx},'${accId}','${stage}','${assignId}')">Delete Permanently</button>
+      <button class="abtn-sm btn-ghost" style="padding:6px 12px" onclick="document.getElementById('_del-ai-overlay2').remove()">Cancel</button>
+    </div>
+  </div></div>`;
+  document.body.appendChild(ov);
+}
+
+async function executeDeleteAI(idx, accId, stage, assignId){
+  const ov = document.getElementById('_del-ai-overlay2');
+  if(ov) ov.remove();
+  if(assignId){
+    await SB.from('pt_action_item_assignments').delete().eq('id',assignId);
+    DB.assignments = DB.assignments.filter(a=>a.id!==assignId);
   }
-  // Then remove the action item row
   removeAI(idx);
+  sal('Action item deleted.','as');
 }
 
 function confirmUnassign(assignId, name){
@@ -883,7 +928,7 @@ function confirmUnassign(assignId, name){
         <span style="font-size:11px;color:var(--muted)">The action item text will remain. ${name} will lose access to this item.</span>
       </div>
       <div style="display:flex;gap:9px">
-        <button class="abtn abtn-blue" onclick="doUnassign('${assignId}','${name}')">Yes, Remove Assignment</button>
+        <button class="abtn abtn-blue" onclick="confirmUnassign2('${assignId}','${name}')">Yes, Remove Assignment</button>
         <button class="abtn-sm btn-ghost" style="padding:6px 12px" onclick="document.getElementById('_unassign-overlay').remove()">Cancel</button>
       </div>
     </div>
@@ -891,9 +936,30 @@ function confirmUnassign(assignId, name){
   document.body.appendChild(overlay);
 }
 
+function confirmUnassign2(assignId, name){
+  /* Second confirmation */
+  const ov1=document.getElementById('_unassign-overlay');
+  if(ov1)ov1.remove();
+  const ov=document.createElement('div');
+  ov.id='_unassign-overlay2';
+  ov.innerHTML=`<div class="overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2100;display:flex;align-items:center;justify-content:center;padding:20px">
+    <div style="background:#fff;border-radius:12px;padding:22px 24px;max-width:360px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.4)">
+      <div style="font-size:15px;font-weight:700;color:#e6a817;margin-bottom:8px">⚠️ Confirm Removal</div>
+      <div style="font-size:13px;color:#2d3748;margin-bottom:16px"><strong>${name}</strong> will no longer see this action item in their Action Items tab. Are you sure?</div>
+      <div style="display:flex;gap:9px">
+        <button class="abtn" style="background:#e6a817;color:#fff;padding:7px 14px" onclick="doUnassign('${assignId}','${name}')">Yes, Remove</button>
+        <button class="abtn-sm btn-ghost" style="padding:6px 12px" onclick="document.getElementById('_unassign-overlay2').remove()">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+
 async function doUnassign(assignId, name){
-  const ov=document.getElementById('_unassign-overlay');
-  if(ov)ov.remove();
+  const ov1=document.getElementById('_unassign-overlay');
+  const ov2=document.getElementById('_unassign-overlay2');
+  if(ov1)ov1.remove();
+  if(ov2)ov2.remove();
   const{error}=await SB.from('pt_action_item_assignments').delete().eq('id',assignId);
   if(error)return sal('Error removing assignment: '+error.message,'ae');
   DB.assignments=DB.assignments.filter(a=>a.id!==assignId);
