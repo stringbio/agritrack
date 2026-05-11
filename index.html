@@ -815,18 +815,32 @@ function buildStageActionItems(stageData,accountId,showAssign){
     const isFirst=idx===0;
     // find existing assignment for this item
     const existingAssign=DB.assignments.find(a=>a.accountId===accId&&a.stage===stage&&a.actionItemIdx===idx);
-    const assignBadge=existingAssign?`<span style="font-size:10px;background:#e8f0fb;color:#1a5276;padding:2px 6px;border-radius:8px;flex-shrink:0" title="Assigned to ${gu(existingAssign.assignedTo).name}">&#128100; ${getDisplayName(gu(existingAssign.assignedTo).name,10)}</span>`:'';
+    const canRemoveAssign=existingAssign&&(isA()||(DB.accounts.find(a=>a.id===accId)?.assignedPartnerId===CU.id));
+    /* Assigned person name IS the unassign button — click name → double confirmation */
+    const assignedName=existingAssign?getDisplayName(gu(existingAssign.assignedTo).name,14):'';
+    const assignBadge=existingAssign
+      ?(canRemoveAssign
+        ?`<button type="button" data-asgn="${existingAssign.id}" data-name="${assignedName}"
+             onclick="confirmUnassign(this.dataset.asgn,this.dataset.name)"
+             style="font-size:10px;background:#e8f0fb;color:#1a5276;padding:2px 8px;border-radius:8px;flex-shrink:0;border:1px solid #bdd7f5;cursor:pointer;font-family:inherit"
+             title="Click to remove assignment for ${assignedName}">&#128100; ${assignedName} ✕</button>`
+        :`<span style="font-size:10px;background:#e8f0fb;color:#1a5276;padding:2px 6px;border-radius:8px;flex-shrink:0">&#128100; ${assignedName}</span>`)
+      :'';
+    const removeAssignBtn='';
     /* Use data-map key to avoid quote escaping in onclick */
     const _aiKey=accId+'|'+stage+'|'+idx;
     if(canAssign&&item.text){window._aiMap=window._aiMap||{};window._aiMap[_aiKey]={accountId:accId,stage:stage,itemIdx:idx,itemText:item.text};}
-    const assignBtn=canAssign&&item.text?`<button type="button" class="abtn-sm btn-ghost" data-aikey="${_aiKey}" onclick="openAssignFromKey(this.dataset.aikey)" style="padding:2px 7px;font-size:10px;flex-shrink:0" title="Assign to Alliance Manager">&#128100; Assign</button>`:'';
+    const assignBtn=canAssign&&item.text&&!existingAssign?`<button type="button" class="abtn-sm btn-ghost" data-aikey="${_aiKey}" onclick="openAssignFromKey(this.dataset.aikey)" style="padding:2px 7px;font-size:10px;flex-shrink:0" title="Assign to Alliance Manager">&#128100; Assign</button>`:'';
+    const reassignBtn=canAssign&&item.text&&existingAssign?`<button type="button" class="abtn-sm btn-ghost" data-aikey="${_aiKey}" onclick="openAssignFromKey(this.dataset.aikey)" style="padding:2px 7px;font-size:10px;flex-shrink:0" title="Reassign to another AM">&#128100; Reassign</button>`:'';
     html+=`<div class="ai-row" id="ai-row-${idx}" style="display:flex;align-items:center;gap:6px;margin-bottom:7px">
       <span style="font-size:10px;font-weight:700;color:var(--muted);min-width:16px">${idx+1}.</span>
       <input type="text" id="ai-text-${idx}" value="${(item.text||'').replace(/"/g,'&quot;')}"
              placeholder="${isFirst?'Action item 1 (always visible)':'Action item '+(idx+1)+'…'}"
              style="flex:1;background:#fff">
-      ${assignBadge}${assignBtn}
-      ${!isFirst?`<button type="button" class="abtn-sm btn-red" onclick="removeAI(${idx})" style="padding:2px 8px;font-size:10px;flex-shrink:0">✕</button>`:''}
+      ${assignBadge}${removeAssignBtn}${assignBtn}${reassignBtn}
+      ${isFirst
+        ?`<button type="button" class="abtn-sm btn-ghost" data-aidx="0" data-accid="${accId}" data-stage="${stage}" onclick="clearAI(0,this)" style="padding:2px 8px;font-size:10px;flex-shrink:0" title="Clear item 1 text and remove assignment">&#215; Clear</button>`
+        :`<button type="button" class="abtn-sm btn-red" data-aidx="${idx}" data-accid="${accId}" data-stage="${stage}" onclick="removeAIWithAssign(parseInt(this.dataset.aidx),this.dataset.accid,this.dataset.stage)" style="padding:2px 8px;font-size:10px;flex-shrink:0" title="Delete this action item">✕</button>`}
     </div>`;
   });
   html+='</div>';
@@ -834,6 +848,65 @@ function buildStageActionItems(stageData,accountId,showAssign){
   else html+=`<div style="font-size:10px;color:var(--muted);margin-top:4px">Maximum 5 action items reached</div>`;
   return html;
 }
+function clearAI(idx, btn){
+  const inp=document.getElementById('ai-text-'+idx);
+  if(inp)inp.value='';
+  // Also remove any assignment for item 1 if it exists
+  if(idx===0&&btn){
+    const accId=btn.dataset.accid;
+    const stage=btn.dataset.stage;
+    const existing=DB.assignments.find(a=>a.accountId===accId&&a.stage===stage&&a.actionItemIdx===0);
+    if(existing) removeAssignInline(existing.id);
+  }
+}
+
+async function removeAIWithAssign(idx, accId, stage){
+  // Remove any existing assignment for this item first
+  const existing=DB.assignments.find(a=>a.accountId===accId&&a.stage===stage&&a.actionItemIdx===idx);
+  if(existing){
+    await SB.from('pt_action_item_assignments').delete().eq('id',existing.id);
+    DB.assignments=DB.assignments.filter(a=>a.id!==existing.id);
+  }
+  // Then remove the action item row
+  removeAI(idx);
+}
+
+function confirmUnassign(assignId, name){
+  /* First confirmation */
+  const overlay=document.createElement('div');
+  overlay.id='_unassign-overlay';
+  overlay.innerHTML=`<div class="overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px">
+    <div style="background:#fff;border-radius:12px;padding:22px 24px;max-width:380px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <div style="font-size:15px;font-weight:700;margin-bottom:6px">Remove Assignment</div>
+      <div style="font-size:12px;color:#4a5568;margin-bottom:16px">
+        Remove the assignment from <strong style="color:#1a5276">${name}</strong>?<br>
+        <span style="font-size:11px;color:var(--muted)">The action item text will remain. ${name} will lose access to this item.</span>
+      </div>
+      <div style="display:flex;gap:9px">
+        <button class="abtn abtn-blue" onclick="doUnassign('${assignId}','${name}')">Yes, Remove Assignment</button>
+        <button class="abtn-sm btn-ghost" style="padding:6px 12px" onclick="document.getElementById('_unassign-overlay').remove()">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+
+async function doUnassign(assignId, name){
+  const ov=document.getElementById('_unassign-overlay');
+  if(ov)ov.remove();
+  const{error}=await SB.from('pt_action_item_assignments').delete().eq('id',assignId);
+  if(error)return sal('Error removing assignment: '+error.message,'ae');
+  DB.assignments=DB.assignments.filter(a=>a.id!==assignId);
+  sal('Assignment removed from '+name+' — action item kept.','as');
+  R();
+}
+
+async function removeAssignInline(assignId){
+  const item=DB.assignments.find(a=>a.id===assignId);
+  const name=item?getDisplayName(gu(item.assignedTo).name,14):'this person';
+  confirmUnassign(assignId,name);
+}
+
 function addAI(){
   const c=document.getElementById('ai-container');
   if(!c)return;
@@ -2104,10 +2177,15 @@ ${items.map(item => {
     </div>
     <span style="background:${sColor};color:#fff;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;white-space:nowrap;margin-left:8px">${sLabel}</span>
   </div>
-  <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
-    Assigned to: <strong style="color:#1a5276">${assignedTo.name||'—'}</strong> &middot;
-    By: <strong>${assignedBy.name||'—'}</strong> &middot; ${fmtD(item.createdAt)}
-    ${item.updatedAt!==item.createdAt?` &middot; Updated: ${fmtD(item.updatedAt)}`:''}
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+    <div style="font-size:11px;color:var(--muted)">
+      Assigned to: <strong style="color:#1a5276">${assignedTo.name||'—'}</strong> &middot;
+      By: <strong>${assignedBy.name||'—'}</strong> &middot; ${fmtD(item.createdAt)}
+      ${item.updatedAt!==item.createdAt?` &middot; Updated: ${fmtD(item.updatedAt)}`:''}
+    </div>
+    ${(forAdmin||(CU&&DB.accounts.find(a=>a.id===accountId)?.assignedPartnerId===CU.id))?
+      `<button class="abtn-sm btn-red" style="padding:2px 9px;font-size:10px;flex-shrink:0" 
+        onclick="removeAssignment('${item.id}')">&#10005; Remove Assignment</button>`:''}
   </div>
   <!-- Comment thread -->
   <div style="margin-top:6px">
@@ -2127,6 +2205,15 @@ ${items.map(item => {
 </div>`;
 }).join('')}
 </div>`;
+}
+
+async function removeAssignment(assignId){
+  if(!confirm('Remove this assignment? The action item text will remain, the assigned AM will lose access.'))return;
+  const{error}=await SB.from('pt_action_item_assignments').delete().eq('id',assignId);
+  if(error)return sal('Error: '+error.message,'ae');
+  DB.assignments=DB.assignments.filter(a=>a.id!==assignId);
+  sal('Assignment removed.','as');
+  R();
 }
 
 async function addTrackingComment(assignId, inputId){
