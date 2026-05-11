@@ -315,6 +315,8 @@ function mapAcc(r){
     trialConnectDate:r.trial_connect_date||'',
     trialAgriManager:r.trial_agri_manager||'',
     trialRemarks:r.trial_remarks||'',
+    // Contact Details (JSONB array)
+    contactDetails:r.contact_details||[],
     createdAt:r.created_at?r.created_at.split('T')[0]:today(),
     updatedAt:r.updated_at?r.updated_at.split('T')[0]:today()
   };
@@ -363,6 +365,8 @@ function mapAssignment(r){
     trialConnectDate:r.trial_connect_date||'',
     trialAgriManager:r.trial_agri_manager||'',
     trialRemarks:r.trial_remarks||'',
+    // Contact Details (JSONB array)
+    contactDetails:r.contact_details||[],
     createdAt:r.created_at?r.created_at.split('T')[0]:today(),
     updatedAt:r.updated_at?r.updated_at.split('T')[0]:today()
   };
@@ -1022,10 +1026,14 @@ ${selAcc?`<div class="card" style="margin-bottom:12px">
   <div><div style="color:var(--muted);font-size:10px;text-transform:uppercase;font-weight:600;letter-spacing:.3px;margin-bottom:2px">Company Type</div>${selAcc.companyType||'—'}</div>
 </div>
 ${selAcc.adminActionItem?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid #f0f3f8"><span style="font-size:10px;font-weight:700;color:#e65100;text-transform:uppercase;letter-spacing:.3px">&#128221; Action Item</span><div style="font-size:12px;margin-top:3px">${selAcc.adminActionItem}</div></div>`:''}
+<div style="margin-top:8px;padding-top:8px;border-top:1px solid #f0f3f8">
+<div class="divlbl" style="margin-bottom:5px">Contact Details</div>
+${buildContactDetails(selAcc.contactDetails||[],true)}
+</div>
 ${(selAcc.estimatedPeakPotential||selAcc.fy2627AB||selAcc.fy2627FF)?`<div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid #f0f3f8;flex-wrap:wrap">
-  <div style="background:#f4f6fb;border-radius:5px;padding:3px 10px;display:flex;align-items:center;gap:5px;flex:1;min-width:0"><span style="font-size:9px;color:var(--muted);font-weight:600;text-transform:uppercase;white-space:nowrap">Peak Potential</span><span style="font-size:13px;font-weight:700;color:#4a7ec7;margin-left:auto">${selAcc.estimatedPeakPotential||'—'} <span style="font-size:9px;font-weight:400">Ac</span></span></div>
-  <div style="background:#f4f6fb;border-radius:5px;padding:3px 10px;display:flex;align-items:center;gap:5px;flex:1;min-width:0"><span style="font-size:9px;color:var(--muted);font-weight:600;text-transform:uppercase;white-space:nowrap">FY 26–27 AB</span><span style="font-size:13px;font-weight:700;color:#3aaa5e;margin-left:auto">${selAcc.fy2627AB||'—'} <span style="font-size:9px;font-weight:400">Ac</span></span></div>
-  <div style="background:#f4f6fb;border-radius:5px;padding:3px 10px;display:flex;align-items:center;gap:5px;flex:1;min-width:0"><span style="font-size:9px;color:var(--muted);font-weight:600;text-transform:uppercase;white-space:nowrap">FY 26–27 FF</span><span style="font-size:13px;font-weight:700;color:#e6a817;margin-left:auto">${selAcc.fy2627FF||'—'} <span style="font-size:9px;font-weight:400">Ac</span></span></div>
+  <div style="background:#f4f6fb;border-radius:5px;padding:3px 10px;display:flex;align-items:center;gap:5px;flex:1;min-width:0"><span style="font-size:9px;color:var(--muted);font-weight:600;text-transform:uppercase;white-space:nowrap">Peak Potential</span><span style="font-size:13px;font-weight:700;color:#4a7ec7;margin-left:auto">${selAcc.estimatedPeakPotential||'—'} <span style="font-size:9px;font-weight:400">Acres</span></span></div>
+  <div style="background:#f4f6fb;border-radius:5px;padding:3px 10px;display:flex;align-items:center;gap:5px;flex:1;min-width:0"><span style="font-size:9px;color:var(--muted);font-weight:600;text-transform:uppercase;white-space:nowrap">FY 26–27 AB</span><span style="font-size:13px;font-weight:700;color:#3aaa5e;margin-left:auto">${selAcc.fy2627AB||'—'} <span style="font-size:9px;font-weight:400">Acres</span></span></div>
+  <div style="background:#f4f6fb;border-radius:5px;padding:3px 10px;display:flex;align-items:center;gap:5px;flex:1;min-width:0"><span style="font-size:9px;color:var(--muted);font-weight:600;text-transform:uppercase;white-space:nowrap">FY 26–27 FF</span><span style="font-size:13px;font-weight:700;color:#e6a817;margin-left:auto">${selAcc.fy2627FF||'—'} <span style="font-size:9px;font-weight:400">Acres</span></span></div>
   <div style="background:#f4f6fb;border-radius:5px;padding:3px 10px;display:flex;align-items:center;gap:5px;flex:1;min-width:0"><span style="font-size:9px;color:var(--muted);font-weight:600;text-transform:uppercase">Importance</span><span style="font-size:12px;font-weight:700;color:#1a1a2e;margin-left:auto">${selAcc.accountImportance||'—'}</span></div>
 </div>`:''}
 </div>`:''}
@@ -1200,6 +1208,8 @@ ${acc?`<div style="font-size:10px;color:var(--muted);margin-top:2px">&#9432; Cha
 <div class="fg"><label class="fl">FY 26–27 FF (Acres)</label><input type="number" id="fa-ff" step="0.01" min="0" value="${acc?.fy2627FF||''}"></div>
 <div class="fg"><label class="fl">Account Importance</label><select id="fa-ai"><option value="">Select...</option><option value="Focus"${acc?.accountImportance==='Focus'?' selected':''}>Focus</option><option value="Target"${acc?.accountImportance==='Target'?' selected':''}>Target</option></select></div>
 </div>
+<div class="divlbl" style="margin-top:8px">Contact Details <span style="font-weight:400;text-transform:none;font-size:10px;color:var(--muted)">(Admin editable — read-only for Alliance Managers)</span></div>
+<div id="cd-wrapper">${buildContactDetails(acc?.contactDetails||[], false)}</div>
 <div style="display:flex;gap:9px;margin-top:10px;align-items:center">
 <button class="abtn abtn-blue" onclick="saveAcc('${sid}')">Save Account Record</button>
 <button class="abtn-sm btn-ghost" style="padding:6px 12px;font-size:12px" onclick="window._aSel=null;R()">Cancel</button>
@@ -1513,6 +1523,11 @@ const COLS=[
   {k:'stagesUpdated',l:'Stages Updated',s:'Stage Data'},
   {k:'latestStage',l:'Latest Stage',s:'Stage Data'},
   {k:'latestActionItem',l:'Latest Action Item',s:'Stage Data'},
+  {k:'contactCount',l:'Contact Count',s:'Contact Details'},
+  {k:'contactNames',l:'Contact Names',s:'Contact Details'},
+  {k:'contactNumbers',l:'Contact Numbers/Emails',s:'Contact Details'},
+  {k:'contactDesignations',l:'Designations',s:'Contact Details'},
+  {k:'contactRoles',l:'Roles',s:'Contact Details'},
 ];
 
 function getRV(a){
@@ -1534,6 +1549,11 @@ function getRV(a){
     stagesUpdated:stageData.length,
     latestStage:latestSD?.stage||'',
     latestActionItem:latestAI,
+    contactCount:(a.contactDetails||[]).length,
+    contactNames:(a.contactDetails||[]).map(c=>c.name).filter(Boolean).join(' | ')||'—',
+    contactNumbers:(a.contactDetails||[]).map(c=>c.contact).filter(Boolean).join(' | ')||'—',
+    contactDesignations:(a.contactDetails||[]).map(c=>c.designation).filter(Boolean).join(' | ')||'—',
+    contactRoles:(a.contactDetails||[]).map(c=>c.role).filter(Boolean).join(' | ')||'—',
   };
 }
 
@@ -1940,6 +1960,67 @@ function renderQTSection(stageData, wrapperId){
 }
 
 
+/* ── Contact Details helpers ─────────────────────────────────────── */
+function buildContactDetails(contacts, readOnly){
+  const list=contacts&&contacts.length?contacts:[];
+  if(readOnly){
+    if(!list.length)return'<div style="font-size:11px;color:var(--muted);font-style:italic">No contacts added</div>';
+    return list.map((c,i)=>`<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:8px 0;${i>0?'border-top:1px solid #f0f3f8':''}">
+<div><div style="font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:2px">Name</div><div style="font-size:12px;font-weight:600">${c.name||'—'}</div></div>
+<div><div style="font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:2px">Contact</div><div style="font-size:12px">${c.contact||'—'}</div></div>
+<div><div style="font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:2px">Designation</div><div style="font-size:12px">${c.designation||'—'}</div></div>
+<div><div style="font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:2px">Role</div><div style="font-size:12px">${c.role||'—'}</div></div>
+</div>`).join('');
+  }
+  const rows=list.length?list:[{name:'',contact:'',designation:'',role:''}];
+  return`<div id="cd-container">${rows.map((c,i)=>contactRowHTML(c,i)).join('')}</div>
+<button type="button" onclick="addContact()" class="abtn-sm btn-ghost" style="margin-top:6px;font-size:11px;padding:4px 10px">+ Add Contact</button>`;
+}
+function contactRowHTML(c,i){
+  return`<div class="cd-row" id="cd-row-${i}" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:8px;align-items:flex-end;margin-bottom:8px">
+<div class="fg" style="margin:0"><label class="fl">Name</label><input type="text" id="cd-name-${i}" value="${(c.name||'').replace(/"/g,'&quot;')}" placeholder="Full name"></div>
+<div class="fg" style="margin:0"><label class="fl">Contact (Mobile/Email)</label><input type="text" id="cd-contact-${i}" value="${(c.contact||'').replace(/"/g,'&quot;')}" placeholder="Mobile or email"></div>
+<div class="fg" style="margin:0"><label class="fl">Designation</label><input type="text" id="cd-desig-${i}" value="${(c.designation||'').replace(/"/g,'&quot;')}" placeholder="e.g. Manager"></div>
+<div class="fg" style="margin:0"><label class="fl">Role</label><input type="text" id="cd-role-${i}" value="${(c.role||'').replace(/"/g,'&quot;')}" placeholder="e.g. Decision Maker"></div>
+${i>0?`<button type="button" class="abtn-sm btn-red" onclick="removeContact(${i})" style="padding:3px 8px;font-size:10px;align-self:flex-end;margin-bottom:2px">✕</button>`:'<div></div>'}
+</div>`;
+}
+function addContact(){
+  const c=document.getElementById('cd-container');
+  if(!c)return;
+  const count=c.querySelectorAll('.cd-row').length;
+  if(count>=10)return sal('Maximum 10 contacts per account','ae');
+  const d=document.createElement('div');
+  d.innerHTML=contactRowHTML({name:'',contact:'',designation:'',role:''},count);
+  c.appendChild(d.firstElementChild);
+}
+function removeContact(idx){
+  const row=document.getElementById('cd-row-'+idx);
+  if(row)row.remove();
+  const c=document.getElementById('cd-container');
+  if(!c)return;
+  c.querySelectorAll('.cd-row').forEach((r,i)=>{
+    r.id='cd-row-'+i;
+    ['name','contact','desig','role'].forEach(f=>{const el=r.querySelector(`[id^="cd-${f}-"]`);if(el)el.id=`cd-${f}-${i}`;});
+    const btn=r.querySelector('button');
+    if(btn&&i>0)btn.setAttribute('onclick',`removeContact(${i})`);
+  });
+}
+function collectContacts(){
+  const c=document.getElementById('cd-container');
+  if(!c)return[];
+  const result=[];
+  c.querySelectorAll('.cd-row').forEach((_,i)=>{
+    const name=document.getElementById(`cd-name-${i}`)?.value?.trim()||'';
+    const contact=document.getElementById(`cd-contact-${i}`)?.value?.trim()||'';
+    const desig=document.getElementById(`cd-desig-${i}`)?.value?.trim()||'';
+    const role=document.getElementById(`cd-role-${i}`)?.value?.trim()||'';
+    if(name||contact||desig||role)result.push({name,contact,designation:desig,role});
+  });
+  return result;
+}
+
+
 function assignedItemsPanel(accountId, stage, forAdmin){
   const items = DB.assignments.filter(a =>
     a.accountId === accountId && (!stage || a.stage === stage)
@@ -2231,6 +2312,7 @@ async function saveAcc(id){
     fy_26_27_ff_acres:parseFloat(document.getElementById('fa-ff')?.value)||null,
     estimated_peak_potential:parseFloat(document.getElementById('fa-ep')?.value)||null,
     account_importance:document.getElementById('fa-ai')?.value||null,
+    contact_details:collectContacts(),
     updated_at:new Date().toISOString()
   };
   if(!id)row.created_at=new Date().toISOString();
