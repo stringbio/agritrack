@@ -1070,7 +1070,8 @@ ${selAcc?`<div class="card" style="margin-bottom:12px">
 ${selAcc.adminActionItem?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid #f0f3f8"><span style="font-size:10px;font-weight:700;color:#e65100;text-transform:uppercase;letter-spacing:.3px">&#128221; Action Item</span><div style="font-size:12px;margin-top:3px">${selAcc.adminActionItem}</div></div>`:''}
 <div style="margin-top:8px;padding-top:8px;border-top:1px solid #f0f3f8">
 <div class="divlbl" style="margin-bottom:5px">Contact Details</div>
-${buildContactDetails(selAcc.contactDetails||[],true)}
+<div id="am-cd-wrapper">${buildContactDetails(selAcc.contactDetails||[], false)}</div>
+<button class="abtn abtn-blue" style="margin-top:8px;padding:6px 14px;font-size:12px" onclick="saveContactDetails('${selAcc.id}')">Save Contact Details</button>
 </div>
 ${(selAcc.estimatedPeakPotential||selAcc.fy2627AB||selAcc.fy2627FF)?`<div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid #f0f3f8;flex-wrap:wrap">
   <div style="background:#f4f6fb;border-radius:5px;padding:3px 10px;display:flex;align-items:center;gap:5px;flex:1;min-width:0"><span style="font-size:9px;color:var(--muted);font-weight:600;text-transform:uppercase;white-space:nowrap">Peak Potential</span><span style="font-size:13px;font-weight:700;color:#4a7ec7;margin-left:auto">${selAcc.estimatedPeakPotential||'—'} <span style="font-size:9px;font-weight:400">Acres</span></span></div>
@@ -1158,6 +1159,16 @@ function trialsSection(sid){
   <button class="abtn abtn-blue" onclick="saveTrials('${sid}')">Save Trial Details</button>
 </div>
 </div>`;
+}
+
+async function saveContactDetails(accountId){
+  const contacts=collectContacts();
+  const{error}=await SB.from('pt_accounts').update({contact_details:contacts,updated_at:new Date().toISOString()}).eq('id',accountId);
+  if(error)return sal('Error saving contacts: '+error.message,'ae');
+  const acc=DB.accounts.find(a=>a.id===accountId);
+  if(acc)acc.contactDetails=contacts;
+  await sbLog('Updated contact details',acc?.companyName||accountId,'contacts','',contacts.length+' contacts',{accountId});
+  sal('Contact details saved!','as');
 }
 
 async function saveTrials(sid){
