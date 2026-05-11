@@ -606,11 +606,11 @@ function openM(type, id){
     html=`<div style="font-size:15px;font-weight:700;margin-bottom:14px">${isEdit?'Edit':'Add'} Alliance Manager</div>
 <div class="fg" style="margin-bottom:8px"><label class="fl">Full Name</label><input type="text" id="m-name" value="${u?.name||''}" placeholder="Full name"></div>
 <div class="fg" style="margin-bottom:8px"><label class="fl">Email</label><input type="email" id="m-email" value="${u?.email||''}" placeholder="email@example.com"></div>
-${!isEdit?`<div class="fg" style="margin-bottom:8px"><label class="fl">Password</label><input type="password" id="m-pw" placeholder="Min 6 characters"></div>`:''}
+${!isEdit?`<div style="background:#eafaf1;border:1px solid #a9dfbf;border-radius:7px;padding:9px 12px;margin-bottom:12px;font-size:12px">&#10003; An <strong>invite email</strong> will be sent automatically so the user can set their own password.</div>`:''}
 <div class="fg" style="margin-bottom:12px"><label class="fl">Status</label>
 <select id="m-status"><option value="active"${(!u||u.status==='active')?' selected':''}>Active</option><option value="inactive"${u?.status==='inactive'?' selected':''}>Inactive</option></select></div>
 <div style="display:flex;gap:8px">
-<button class="abtn abtn-blue" onclick="saveUser('${isEdit?id:''}','partner')">Save</button>
+<button class="abtn abtn-blue" onclick="saveUser('${isEdit?id:''}','partner')">${isEdit?'Save Changes':'Add & Send Invite'}</button>
 <button class="abtn-sm btn-ghost" style="padding:6px 12px" onclick="closeM()">Cancel</button></div>`;
   }
   else if(type==='add-admin'||type==='edit-admin'){
@@ -618,11 +618,11 @@ ${!isEdit?`<div class="fg" style="margin-bottom:8px"><label class="fl">Password<
     html=`<div style="font-size:15px;font-weight:700;margin-bottom:14px">${isEdit?'Edit':'Add'} Admin</div>
 <div class="fg" style="margin-bottom:8px"><label class="fl">Full Name</label><input type="text" id="m-name" value="${u?.name||''}" placeholder="Full name"></div>
 <div class="fg" style="margin-bottom:8px"><label class="fl">Email</label><input type="email" id="m-email" value="${u?.email||''}" placeholder="email@example.com"></div>
-${!isEdit?`<div class="fg" style="margin-bottom:8px"><label class="fl">Password</label><input type="password" id="m-pw" placeholder="Min 6 characters"></div>`:''}
+${!isEdit?`<div style="background:#eafaf1;border:1px solid #a9dfbf;border-radius:7px;padding:9px 12px;margin-bottom:12px;font-size:12px">&#10003; An <strong>invite email</strong> will be sent automatically so the user can set their own password.</div>`:''}
 <div class="fg" style="margin-bottom:12px"><label class="fl">Status</label>
 <select id="m-status"><option value="active"${(!u||u.status==='active')?' selected':''}>Active</option><option value="inactive"${u?.status==='inactive'?' selected':''}>Inactive</option></select></div>
 <div style="display:flex;gap:8px">
-<button class="abtn abtn-blue" onclick="saveUser('${isEdit?id:''}','admin')">Save</button>
+<button class="abtn abtn-blue" onclick="saveUser('${isEdit?id:''}','admin')">${isEdit?'Save Changes':'Add & Send Invite'}</button>
 <button class="abtn-sm btn-ghost" style="padding:6px 12px" onclick="closeM()">Cancel</button></div>`;
   }
   else if(type==='reset-pw'){
@@ -684,18 +684,38 @@ async function saveUser(id, role){
   const status=document.getElementById('m-status')?.value||'active';
   if(!name)return sal('Name is required','ae');
   if(!email)return sal('Email is required','ae');
-  if(!id&&pw.length<6)return sal('Password must be at least 6 characters','ae');
   // Check email uniqueness
   const existing=DB.users.find(u=>u.email===email&&u.id!==id);
   if(existing)return sal('Email already in use by another account','ae');
-  const row={name,email,status,role};
-  if(id){row.id=id;}
-  else{row.id=uid();row.password=pw;row.created_at=new Date().toISOString();}
-  const{error}=await SB.from('pt_users').upsert([row]);
-  if(error)return sal('Error: '+error.message,'ae');
-  await sbLog(id?'Updated user':'Created user',name,'user','',id?'updated':'created');
-  closeM();
-  sal((id?'Updated':'Added')+' '+name+'!','as');
+
+  if(!id){
+    /* NEW USER — send Supabase invite email so they set their own password */
+    const{error:invErr}=await SB.auth.admin.inviteUserByEmail(email,{
+      data:{name,role}
+    });
+    /* inviteUserByEmail requires service_role key — if it fails (anon key),
+       fall back to creating a pt_users record only and show manual instruction */
+    const row={id:uid(),name,email,status,role,
+               password:pw||'changeme',created_at:new Date().toISOString()};
+    const{error}=await SB.from('pt_users').insert([row]);
+    if(error)return sal('Error: '+error.message,'ae');
+    await sbLog('Created user',name,'user','','created');
+    closeM();
+    if(invErr){
+      /* Invite failed — show manual instruction */
+      sal(`User ${name} added! ⚠️ Auto-invite failed (${invErr.message}). Please manually add ${email} in Supabase Auth Dashboard.`,'ai',8000);
+    } else {
+      sal(`User ${name} added! ✉️ Invite email sent to ${email} — they can set their own password.`,'as',5000);
+    }
+  } else {
+    /* EDIT EXISTING USER — just update pt_users */
+    const row={name,email,status,role};
+    const{error}=await SB.from('pt_users').update(row).eq('id',id);
+    if(error)return sal('Error: '+error.message,'ae');
+    await sbLog('Updated user',name,'user','','updated');
+    closeM();
+    sal('Updated '+name+'!','as');
+  }
 }
 
 async function doResetPW(id){
