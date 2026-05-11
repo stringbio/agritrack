@@ -2319,7 +2319,7 @@ async function saveAcc(id){
   const{error}=await SB.from('pt_accounts').upsert([row]);
   if(error){
     if(error.message&&error.message.includes('contact_details'))
-      return sal('Please run this SQL first: ALTER TABLE pt_accounts ADD COLUMN IF NOT EXISTS contact_details JSONB DEFAULT '[]';','ae');
+      return sal('Contact Details column missing in database. Please add it via Supabase SQL Editor first.','ae');
     return sal('Error: '+error.message,'ae');
   }
   await sbLog(id?'Updated account record':'Created account record',cn,'overview','',id?'updated':'created',{accountId:row.id});
@@ -2330,7 +2330,7 @@ async function saveAcc(id){
   if(row.contact_details&&row.contact_details.length>0){
     const saved=DB.accounts.find(a=>a.id===row.id);
     if(saved&&(!saved.contactDetails||saved.contactDetails.length===0)){
-      sal('Account saved, but Contact Details were NOT stored. Run SQL: ALTER TABLE pt_accounts ADD COLUMN IF NOT EXISTS contact_details JSONB DEFAULT '[]';','ae');
+      sal('Account saved! But Contact Details were not stored — the database column is missing. Please add it via Supabase SQL Editor.','ae');
       return;
     }
   }
