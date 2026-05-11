@@ -407,6 +407,11 @@ async function sbSeed(){
   await SB.from('pt_am_updates').upsert(SEED_AM);
 }
 async function bootDB(){
+  /* Handle password reset redirect from email link */
+  if(location.hash==='#reset-password'){
+    const{data:{session}}=await SB.auth.getSession();
+    if(session){ATAB='reset';RS=3;R();return;}
+  }
   const{data:ex}=await SB.from('pt_users').select('id').limit(1);
   if(!ex||ex.length===0)await sbSeed();
   await sbLoad();
@@ -460,17 +465,18 @@ ${fi('Full Name *','sn')}${fi('Work Email *','se','','email')}${fi('Password *',
 
 function rstH(){
   let body='';
-  if(RS===1)body=`${fi('Registered email','re',REMAIL,'email')}<button class="abtn abtn-blue" style="width:100%;padding:9px" onclick="rs1()">Continue</button>`;
-  else body=`<div style="text-align:center;padding:18px 6px">
-<div style="font-size:34px;margin-bottom:10px">&#128274;</div>
-<div style="font-size:14px;font-weight:700;color:#1a1a2e;margin-bottom:8px">Contact Your Administrator</div>
-<div style="font-size:12px;color:#4a5568;line-height:1.8">Self-service password reset is not available.<br>Please contact your <strong>System Administrator</strong><br>to reset the password for:<br><strong style="color:#4a7ec7;font-size:13px">${REMAIL}</strong></div>
-<button class="abtn abtn-blue" style="margin-top:16px;padding:7px 22px" onclick="RS=1;REMAIL='';R()">&#8592; Back</button>
+  if(RS===1)body=`${fi('Registered email','re',REMAIL,'email')}<button class="abtn abtn-blue" style="width:100%;padding:9px" onclick="rs1()">Send Reset Link</button>`;
+  else if(RS===2)body=`<div style="text-align:center;padding:18px 6px">
+<div style="font-size:34px;margin-bottom:10px">&#128231;</div>
+<div style="font-size:14px;font-weight:700;color:#1a1a2e;margin-bottom:8px">Check Your Email</div>
+<div style="font-size:12px;color:#4a5568;line-height:1.8">A password reset link has been sent to:<br><strong style="color:#4a7ec7">${REMAIL}</strong><br><br>Click the link in the email to set a new password.<br><span style="font-size:11px;color:var(--muted)">Link expires in 1 hour. Check spam if not received.</span></div>
+<button class="abtn-sm btn-ghost" style="margin-top:16px;padding:6px 18px" onclick="RS=1;REMAIL='';R()">&#8592; Back</button>
 </div>`;
+  else body=`${fi('New Password','rnp','','password')}${fi('Confirm','rcp','','password')}<button class="abtn abtn-blue" style="width:100%;padding:9px" onclick="rs3()">Set New Password</button>`;
   return`<div class="abg"><div class="ac">
 <div class="alogo">${LOGO_IMG_AUTH}<h2 style="margin-top:6px">Forgot Password</h2></div>
 ${AL?`<div class="alert ${AL.type}">${AL.msg}</div>`:''}
-${RS===1?`<div class="steps"><div class="step" style="background:#4a7ec7;flex:1"></div></div>`:'' }
+${RS===1?`<div class="steps"><div class="step" style="background:#4a7ec7;flex:1"></div></div>`:''}
 ${body}${RS===1?`<div style="text-align:center;margin-top:10px"><button class="blk" onclick="ATAB='login';RS=1;R()">Back to Login</button></div>`:''}
 </div></div>`;}
 
@@ -514,10 +520,26 @@ async function rs1(){
   const e=(document.getElementById('re')?.value||'').trim();
   if(!e)return sal('Enter your registered email','ae');
   if(!DB.users.find(u=>u.email===e))return sal('No account found with that email','ae');
+  const{error}=await SB.auth.resetPasswordForEmail(e,{
+    redirectTo:window.location.origin+window.location.pathname+'#reset-password'
+  });
+  if(error)return sal('Error sending reset email: '+error.message,'ae');
   REMAIL=e;RS=2;AL=null;R();
 }
 async function rs2(){RS=1;REMAIL='';AL=null;R();}
-async function rs3(){}
+async function rs3(){
+  const np=document.getElementById('rnp')?.value||'';
+  const cp=document.getElementById('rcp')?.value||'';
+  if(np.length<8)return sal('Minimum 8 characters','ae');
+  if(np!==cp)return sal('Passwords do not match','ae');
+  const{error}=await SB.auth.updateUser({password:np});
+  if(error)return sal('Error: '+error.message,'ae');
+  // Also update pt_users for backward compatibility
+  const{data:{user}}=await SB.auth.getUser();
+  if(user)await SB.from('pt_users').update({password:np}).eq('email',user.email);
+  sal('Password updated! Redirecting to login…','as',3000);
+  setTimeout(()=>{ATAB='login';RS=1;location.hash='';R();},3000);
+}
 async function doLogout(){CU=null;AL=null;PAGE='dashboard';ATAB='login';FILTERS={status:'',partner:'',stage:'',company:''};location.hash='';localStorage.removeItem('pt_session');R();}
 function logout(){doLogout();}
 
