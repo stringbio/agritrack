@@ -2317,11 +2317,23 @@ async function saveAcc(id){
   };
   if(!id)row.created_at=new Date().toISOString();
   const{error}=await SB.from('pt_accounts').upsert([row]);
-  if(error)return sal('Error: '+error.message,'ae');
+  if(error){
+    if(error.message&&error.message.includes('contact_details'))
+      return sal('Please run this SQL first: ALTER TABLE pt_accounts ADD COLUMN IF NOT EXISTS contact_details JSONB DEFAULT '[]';','ae');
+    return sal('Error: '+error.message,'ae');
+  }
   await sbLog(id?'Updated account record':'Created account record',cn,'overview','',id?'updated':'created',{accountId:row.id});
   const{data:fresh}=await SB.from('pt_accounts').select('*').order('created_at',{ascending:true});
   if(fresh)DB.accounts=fresh.map(mapAcc);
   window._aSel=row.id;
+  // Verify contact_details was saved (column may not exist)
+  if(row.contact_details&&row.contact_details.length>0){
+    const saved=DB.accounts.find(a=>a.id===row.id);
+    if(saved&&(!saved.contactDetails||saved.contactDetails.length===0)){
+      sal('Account saved, but Contact Details were NOT stored. Run SQL: ALTER TABLE pt_accounts ADD COLUMN IF NOT EXISTS contact_details JSONB DEFAULT '[]';','ae');
+      return;
+    }
+  }
   sal(id?'Account updated!':'Account created!','as');
 }
 
