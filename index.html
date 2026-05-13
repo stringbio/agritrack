@@ -394,6 +394,7 @@ async function sbLoad(){
   if(auR.data)DB.auditLog=auR.data.map(r=>({ts:new Date(r.created_at).toLocaleString('en-IN'),user:r.user_name,role:r.user_role,action:r.action,record:r.record_name,field:r.field_name,oldv:r.old_value||'',newv:r.new_value||''}));
   if(sdR.data)DB.stageData=sdR.data.map(mapStageData);
   if(asR.data)DB.assignments=asR.data.map(mapAssignment);
+  await loadFFProposals();
 }
 /* Get all stage data for an account */
 function getSD(accountId){return DB.stageData.filter(s=>s.accountId===accountId);}
@@ -1284,7 +1285,22 @@ ${selAcc.adminActionItem?`<div style="margin-top:8px;padding-top:8px;border-top:
 ${(selAcc.estimatedPeakPotential||selAcc.fy2627AB||selAcc.fy2627FF)?`<div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid #f0f3f8;flex-wrap:wrap">
   <div style="background:#f4f6fb;border-radius:5px;padding:3px 10px;display:flex;align-items:center;gap:5px;flex:1;min-width:0"><span style="font-size:9px;color:var(--muted);font-weight:600;text-transform:uppercase;white-space:nowrap">Peak Potential</span><span style="font-size:13px;font-weight:700;color:#4a7ec7;margin-left:auto">${selAcc.estimatedPeakPotential||'—'} <span style="font-size:9px;font-weight:400">Acres</span></span></div>
   <div style="background:#f4f6fb;border-radius:5px;padding:3px 10px;display:flex;align-items:center;gap:5px;flex:1;min-width:0"><span style="font-size:9px;color:var(--muted);font-weight:600;text-transform:uppercase;white-space:nowrap">FY 26–27 AB</span><span style="font-size:13px;font-weight:700;color:#3aaa5e;margin-left:auto">${selAcc.fy2627AB||'—'} <span style="font-size:9px;font-weight:400">Acres</span></span></div>
-  <div style="background:#f4f6fb;border-radius:5px;padding:3px 10px;display:flex;align-items:center;gap:5px;flex:1;min-width:0"><span style="font-size:9px;color:var(--muted);font-weight:600;text-transform:uppercase;white-space:nowrap">FY 26–27 FF</span><span style="font-size:13px;font-weight:700;color:#e6a817;margin-left:auto">${selAcc.fy2627FF||'—'} <span style="font-size:9px;font-weight:400">Acres</span></span></div>
+  <div style="background:#f4f6fb;border-radius:5px;padding:3px 10px;display:flex;align-items:center;gap:5px;flex:1;min-width:0">
+    <span style="font-size:9px;color:var(--muted);font-weight:600;text-transform:uppercase;white-space:nowrap">FY 26–27 FF</span>
+    <span style="font-size:13px;font-weight:700;color:#e6a817;margin-left:auto">
+      ${(()=>{
+        const prop=DB._ffProposals&&DB._ffProposals[selAcc.id];
+        if(prop&&prop.status==='pending') return selAcc.fy2627FF||'—';
+        return selAcc.fy2627FF||'—';
+      })()} <span style="font-size:9px;font-weight:400">Acres</span>
+      ${(()=>{
+        const prop=DB._ffProposals&&DB._ffProposals[selAcc.id];
+        if(prop&&prop.status==='pending') return `<span style="font-size:9px;background:#fff8f0;color:#e65100;border:1px solid #ffcc80;border-radius:8px;padding:1px 5px;margin-left:4px">⏳ Pending: ${prop.proposedValue} Ac</span>`;
+        return '';
+      })()}
+    </span>
+    <button class="abtn-sm btn-ghost" style="padding:2px 7px;font-size:10px;flex-shrink:0;margin-left:4px" onclick="openFFProposal('${selAcc.id}','${selAcc.fy2627FF||0}')">✏ Edit</button>
+  </div>
   <div style="background:#f4f6fb;border-radius:5px;padding:3px 10px;display:flex;align-items:center;gap:5px;flex:1;min-width:0"><span style="font-size:9px;color:var(--muted);font-weight:600;text-transform:uppercase">Importance</span><span style="font-size:12px;font-weight:700;color:#1a1a2e;margin-left:auto">${selAcc.accountImportance||'—'}</span></div>
 </div>`:''}
 </div>`:''}
@@ -1365,6 +1381,130 @@ function trialsSection(sid){
 </div>
 <div style="margin-top:10px">
   <button class="abtn abtn-blue" onclick="saveTrials('${sid}')">Save Trial Details</button>
+</div>
+</div>`;
+}
+
+/* ── FY 26–27 FF Proposal System ─────────────────────────────────── */
+function openFFProposal(accId, currentVal){
+  const existing = DB._ffProposals && DB._ffProposals[accId];
+  const ov = document.createElement('div');
+  ov.id = '_ff-proposal-overlay';
+  ov.innerHTML = `<div class="overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;border-radius:12px;padding:22px 24px;max-width:380px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <div style="font-size:15px;font-weight:700;margin-bottom:4px">Propose FY 26–27 FF Edit</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:14px">Your request will be sent to Admin for approval. The value won't change until approved.</div>
+    <div class="fg" style="margin-bottom:6px">
+      <label class="fl">Current Value</label>
+      <div style="background:#f4f6fb;padding:6px 10px;border-radius:6px;font-size:13px;font-weight:600;color:#e6a817">${currentVal||'—'} Acres</div>
+    </div>
+    ${existing&&existing.status==='pending'?`<div style="background:#fff8f0;border:1px solid #ffcc80;border-radius:6px;padding:7px 10px;margin-bottom:10px;font-size:11px">⏳ You already have a pending proposal: <strong>${existing.proposedValue} Acres</strong></div>`:''}
+    <div class="fg" style="margin-bottom:14px">
+      <label class="fl">Proposed New Value (Acres)</label>
+      <input type="number" id="ff-proposal-input" step="0.01" min="0" placeholder="Enter new value" style="background:#fff" value="${existing&&existing.status==='pending'?existing.proposedValue:''}">
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:14px">Reason (optional): <input type="text" id="ff-proposal-reason" placeholder="e.g. Updated field estimate" style="background:#fff;margin-top:4px;width:100%"></div>
+    <div style="display:flex;gap:9px">
+      <button class="abtn abtn-blue" onclick="submitFFProposal('${accId}','${currentVal}')">Submit for Approval</button>
+      <button class="abtn-sm btn-ghost" style="padding:6px 12px" onclick="document.getElementById('_ff-proposal-overlay').remove()">Cancel</button>
+    </div>
+  </div></div>`;
+  document.body.appendChild(ov);
+}
+
+async function submitFFProposal(accId, currentVal){
+  const newVal = parseFloat(document.getElementById('ff-proposal-input')?.value);
+  const reason = document.getElementById('ff-proposal-reason')?.value?.trim()||'';
+  if(isNaN(newVal)||newVal<0) return sal('Please enter a valid number','ae');
+  if(newVal===parseFloat(currentVal)) return sal('Proposed value is the same as current value','ae');
+
+  const acc = DB.accounts.find(a=>a.id===accId);
+  const proposal = {
+    accountId: accId,
+    accountName: acc?.companyName||accId,
+    fieldKey: 'fy_26_27_ff_acres',
+    fieldLabel: 'FY 26–27 FF (Acres)',
+    currentValue: parseFloat(currentVal)||0,
+    proposedValue: newVal,
+    proposedBy: CU.id,
+    proposedByName: CU.name,
+    reason,
+    status: 'pending',
+    proposedAt: new Date().toISOString()
+  };
+
+  const{error}=await SB.from('pt_settings').upsert([{
+    key: 'fy_ff_proposal_'+accId,
+    value: proposal
+  }]);
+  if(error) return sal('Error submitting: '+error.message,'ae');
+
+  if(!DB._ffProposals) DB._ffProposals={};
+  DB._ffProposals[accId]=proposal;
+
+  document.getElementById('_ff-proposal-overlay')?.remove();
+  sal('Proposal submitted! Admin will review and approve.','as',4000);
+  R();
+}
+
+async function loadFFProposals(){
+  const{data}=await SB.from('pt_settings').select('*').like('key','fy_ff_proposal_%');
+  DB._ffProposals={};
+  if(data){
+    data.forEach(row=>{
+      const val=typeof row.value==='string'?JSON.parse(row.value):row.value;
+      if(val&&val.status==='pending') DB._ffProposals[val.accountId]=val;
+    });
+  }
+}
+
+async function approveFFProposal(accId){
+  const prop=DB._ffProposals&&DB._ffProposals[accId];
+  if(!prop)return sal('Proposal not found','ae');
+  const{error}=await SB.from('pt_accounts').update({
+    fy_26_27_ff_acres:prop.proposedValue,
+    updated_at:new Date().toISOString()
+  }).eq('id',accId);
+  if(error)return sal('Error approving: '+error.message,'ae');
+  await SB.from('pt_settings').delete().eq('key','fy_ff_proposal_'+accId);
+  const acc=DB.accounts.find(a=>a.id===accId);
+  if(acc)acc.fy2627FF=prop.proposedValue;
+  delete DB._ffProposals[accId];
+  await sbLog('Approved FY FF proposal',prop.accountName,'fy_26_27_ff_acres',prop.currentValue,prop.proposedValue,{accountId:accId});
+  sal('Approved! FY 26–27 FF updated to '+prop.proposedValue+' Acres.','as');
+  R();
+}
+
+async function rejectFFProposal(accId){
+  const prop=DB._ffProposals&&DB._ffProposals[accId];
+  if(!prop)return;
+  await SB.from('pt_settings').delete().eq('key','fy_ff_proposal_'+accId);
+  delete DB._ffProposals[accId];
+  await sbLog('Rejected FY FF proposal',prop.accountName,'fy_26_27_ff_acres',prop.currentValue,prop.proposedValue,{accountId:accId});
+  sal('Proposal rejected.','as');
+  R();
+}
+
+/* ── FY FF Proposal Admin Badge (shown in pgAccEntry) ────────────── */
+function ffProposalBadge(accId){
+  const prop=DB._ffProposals&&DB._ffProposals[accId];
+  if(!prop||prop.status!=='pending')return'';
+  return`<div style="background:#fff8f0;border:2px solid #ffcc80;border-radius:8px;padding:10px 12px;margin-top:8px">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+  <div>
+    <div style="font-size:11px;font-weight:700;color:#e65100;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">⏳ Pending FY FF Edit Request</div>
+    <div style="font-size:12px;color:#2d3748">From: <strong>${prop.proposedByName}</strong> &middot; ${fmtD(prop.proposedAt)}</div>
+  </div>
+</div>
+<div style="display:flex;gap:12px;font-size:12px;margin-bottom:10px">
+  <div><span style="color:var(--muted)">Current:</span> <strong>${prop.currentValue||'—'} Acres</strong></div>
+  <div style="color:#e65100">→</div>
+  <div><span style="color:var(--muted)">Proposed:</span> <strong style="color:#e65100">${prop.proposedValue} Acres</strong></div>
+</div>
+${prop.reason?`<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Reason: <em>${prop.reason}</em></div>`:''}
+<div style="display:flex;gap:8px">
+  <button class="abtn" style="background:#3aaa5e;color:#fff;padding:5px 12px;font-size:12px" onclick="approveFFProposal('${accId}')">✓ Approve</button>
+  <button class="abtn-sm btn-red" style="padding:5px 12px;font-size:12px" onclick="rejectFFProposal('${accId}')">✗ Reject</button>
 </div>
 </div>`;
 }
@@ -1469,6 +1609,7 @@ ${acc?`<div style="font-size:10px;color:var(--muted);margin-top:2px">&#9432; Cha
 <div class="fg"><label class="fl">FY 26–27 FF (Acres)</label><input type="number" id="fa-ff" step="0.01" min="0" value="${acc?.fy2627FF||''}"></div>
 <div class="fg"><label class="fl">Account Importance</label><select id="fa-ai"><option value="">Select...</option><option value="Focus"${acc?.accountImportance==='Focus'?' selected':''}>Focus</option><option value="Target"${acc?.accountImportance==='Target'?' selected':''}>Target</option></select></div>
 </div>
+${sid?ffProposalBadge(sid):''}
 <div class="divlbl" style="margin-top:8px">Contact Details <span style="font-weight:400;text-transform:none;font-size:10px;color:var(--muted)">(Admin editable — read-only for Alliance Managers)</span></div>
 <div id="cd-wrapper">${buildContactDetails(acc?.contactDetails||[], false)}</div>
 <div style="display:flex;gap:9px;margin-top:10px;align-items:center">
