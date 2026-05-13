@@ -1126,8 +1126,8 @@ function pgDash(){
 </div>
 ${filterBarHTML(isA(),myAll)}
 <div class="card"><div class="ctitle">Accounts Overview</div>
-<div class="tscroll"><table style="min-width:500px"><thead><tr><th>Account</th>${isA()?'<th>Alliance Manager</th>':''}<th>Stage</th><th>Status</th><th>AM Connect</th><th>OD</th></tr></thead>
-<tbody>${f.slice(0,8).map(a=>`<tr><td><strong>${a.companyName}</strong><div style="font-size:10px;color:var(--muted)">${a.accountGroup}</div></td>${isA()?`<td style="font-size:11px">${a.partnerName}</td>`:''}<td style="font-size:11px">${a.stageName}</td><td><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':a.overallStatus==='on_hold'?'On Hold':a.overallStatus==='not_started'?'Not Started':'Green'}</span></td><td style="font-size:11px">${a.am?.connectStage||'<span style="color:var(--muted)">Not updated</span>'}</td><td>${a.amOD>0?`<span class="oday">+${a.amOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td></tr>`).join('')}</tbody></table></div></div>
+<div class="tscroll"><table style="min-width:500px"><thead><tr><th>Account</th><th>Opp. Category</th><th>Crop</th>${isA()?'<th>Alliance Manager</th>':''}<th>Stage</th><th>Status</th><th>FY 26–27 FF</th><th>AM Connect</th><th>Overdue</th></tr></thead>
+<tbody>${f.slice(0,8).map(a=>`<tr><td><strong>${a.companyName}</strong><div style="font-size:10px;color:var(--muted)">${a.accountGroup}</div></td><td style="font-size:11px">${a.opportunityCategory||'—'}</td><td style="font-size:11px">${a.crop||'—'}</td>${isA()?`<td style="font-size:11px">${a.partnerName}</td>`:''}<td style="font-size:11px">${a.stageName}</td><td><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':a.overallStatus==='on_hold'?'On Hold':a.overallStatus==='not_started'?'Not Started':'Green'}</span></td><td style="font-size:11px">${a.fy2627FF||'—'}</td><td style="font-size:11px">${a.am?.connectStage||'<span style="color:var(--muted)">Not updated</span>'}</td><td>${a.amOD>0?`<span class="oday">+${a.amOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td></tr>`).join('')}</tbody></table></div></div>
 <div style="display:flex;gap:10px;justify-content:center;margin-top:4px">
 </div>
 <div class="g3" style="margin-top:14px">
@@ -1187,8 +1187,8 @@ function pgOverallDash(){
 ${filterBarHTML(true,all)}
 
 <div class="card"><div class="ctitle">All Accounts</div>
-<div class="tscroll"><table style="min-width:600px"><thead><tr><th>Account</th><th>Alliance Manager</th><th>Group</th><th>Stage</th><th>Status</th><th>Importance</th><th>OD</th></tr></thead>
-<tbody>${f.map(a=>`<tr><td><strong>${a.companyName}</strong></td><td style="font-size:11px">${a.partnerName}</td><td style="font-size:11px">${a.accountGroup||'—'}</td><td style="font-size:11px">${a.stageName}</td><td><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':a.overallStatus==='on_hold'?'On Hold':a.overallStatus==='not_started'?'Not Started':'Green'}</span></td><td style="font-size:11px">${a.accountImportance||'—'}</td><td>${a.amOD>0?`<span class="oday">+${a.amOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td></tr>`).join('')}</tbody></table></div></div>`;
+<div class="tscroll"><table style="min-width:600px"><thead><tr><th>Account</th><th>Alliance Manager</th><th>Group</th><th>Opp. Category</th><th>Crop</th><th>Stage</th><th>Status</th><th>FY 26–27 FF</th><th>Overdue</th></tr></thead>
+<tbody>${f.map(a=>`<tr><td><strong>${a.companyName}</strong></td><td style="font-size:11px">${a.partnerName}</td><td style="font-size:11px">${a.accountGroup||'—'}</td><td style="font-size:11px">${a.opportunityCategory||'—'}</td><td style="font-size:11px">${a.crop||'—'}</td><td style="font-size:11px">${a.stageName}</td><td><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':a.overallStatus==='on_hold'?'On Hold':a.overallStatus==='not_started'?'Not Started':'Green'}</span></td><td style="font-size:11px">${a.fy2627FF||'—'}</td><td>${a.amOD>0?`<span class="oday">+${a.amOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td></tr>`).join('')}</tbody></table></div></div>`;
 }
 
 
