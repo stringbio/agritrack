@@ -27,7 +27,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#eef2f7;color:#1a1a2
 .pg{display:none}.pg.act{display:block}
 .krow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:16px}
 .kcard{border-radius:10px;padding:12px 14px;color:#fff}
-.kc-b{background:#4a7ec7}.kc-r{background:#e74c3c}.kc-y{background:#e6a817}.kc-g{background:#3aaa5e}.kc-p{background:#c0392b}
+.kc-b{background:#4a7ec7}.kc-r{background:#e74c3c}.kc-y{background:#e6a817}.kc-g{background:#3aaa5e}.kc-oh{background:#2d3748}.kc-ns{background:#868e96}.kc-p{background:#c0392b}
 .klbl{font-size:10px;font-weight:700;opacity:.9;text-transform:uppercase;letter-spacing:.5px}
 .knum{font-size:28px;font-weight:800;line-height:1.1}
 .ksub{font-size:10px;opacity:.8;margin-top:1px}
@@ -39,7 +39,7 @@ td{padding:7px 9px;border-bottom:1px solid #f0f3f8;color:#2d3748;vertical-align:
 tr:hover td{background:#fafbfe}
 .tscroll{overflow-x:auto}
 .pill{display:inline-block;padding:2px 9px;border-radius:12px;font-size:11px;font-weight:700}
-.p-red{background:#e74c3c;color:#fff}.p-yellow{background:#e6a817;color:#fff}.p-green{background:#3aaa5e;color:#fff}.p-na{background:#7a8499;color:#fff}
+.p-red{background:#e74c3c;color:#fff}.p-yellow{background:#e6a817;color:#fff}.p-green{background:#3aaa5e;color:#fff}.p-na{background:#7a8499;color:#fff}.p-on-hold{background:#2d3748;color:#fff}.p-not-started{background:#868e96;color:#fff}
 .oday{background:#fdecea;color:#c0392b;padding:2px 6px;border-radius:5px;font-weight:700;font-size:11px}
 .sh{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:700;margin-bottom:12px}
 .sh-ov{background:#e8f0fb;color:#1a5276}
@@ -239,7 +239,7 @@ function getDisplayName(fullName,maxLen=14){
 function gu(id){return DB.users.find(u=>u.id===id)||{name:'—'};}
 function gs(id){return DB.stages.find(s=>s.id===id)||{name:'—'};}
 function getAM(aid){return DB.amUpdates.find(a=>a.account_id===aid)||null;}
-function sc(s){return s==='red'?'p-red':s==='yellow'?'p-yellow':s==='na'?'p-na':'p-green';}
+function sc(s){return s==='red'?'p-red':s==='yellow'?'p-yellow':s==='on_hold'?'p-on-hold':s==='not_started'?'p-not-started':s==='na'?'p-na':'p-green';}
 const isA=()=>CU&&(CU.role==='admin'||CU.role==='superadmin');
 const isSA=()=>CU&&CU.role==='superadmin';
 
@@ -794,7 +794,7 @@ function filterBarHTML(showAM, baseAccounts){
   const pts=DB.users.filter(u=>u.role==='partner');
   const companyOpts=accs.map(a=>`<option value="${a.id}"${FILTERS.company===a.id?' selected':''}>${a.companyName}</option>`).join('');
   return`<div class="card"><div style="display:flex;gap:9px;flex-wrap:wrap;align-items:flex-end">
-  <div class="tf-g"><div class="tf-l">Status</div><select class="tf-s" onchange="FILTERS.status=this.value;R()"><option value="">All</option><option value="red"${FILTERS.status==='red'?' selected':''}>Red</option><option value="yellow"${FILTERS.status==='yellow'?' selected':''}>Yellow</option><option value="green"${FILTERS.status==='green'?' selected':''}>Green</option></select></div>
+  <div class="tf-g"><div class="tf-l">Status</div><select class="tf-s" onchange="FILTERS.status=this.value;R()"><option value="">All</option><option value="red"${FILTERS.status==='red'?' selected':''}>Red</option><option value="yellow"${FILTERS.status==='yellow'?' selected':''}>Yellow</option><option value="green"${FILTERS.status==='green'?' selected':''}>Green</option><option value="on_hold"${FILTERS.status==='on_hold'?' selected':''}>On Hold</option><option value="not_started"${FILTERS.status==='not_started'?' selected':''}>Not Started</option></select></div>
   ${showAM?`<div class="tf-g"><div class="tf-l">Alliance Manager</div><select class="tf-s" onchange="FILTERS.partner=this.value;R()"><option value="">All</option>${pts.map(p=>`<option value="${p.id}"${FILTERS.partner===p.id?' selected':''}>${p.name}</option>`).join('')}</select></div>`:''}
   <div class="tf-g"><div class="tf-l">Stage</div><select class="tf-s" onchange="FILTERS.stage=this.value;R()"><option value="">All</option>${DB.stages.map(s=>`<option value="${s.id}"${FILTERS.stage===s.id?' selected':''}>${s.name}</option>`).join('')}</select></div>
   <div class="tf-g"><div class="tf-l">Company Name</div><select class="tf-s" onchange="FILTERS.company=this.value;R()"><option value="">All</option>${companyOpts}</select></div>
@@ -1114,19 +1114,20 @@ function pgDash(){
   // My Dashboard = only AM's own accounts
   const myAll=isA()?all:all.filter(a=>a.assignedPartnerId===CU.id);
   const f=filtAccs(myAll);
-  const red=myAll.filter(a=>a.overallStatus==='red').length,yel=myAll.filter(a=>a.overallStatus==='yellow').length,grn=myAll.filter(a=>a.overallStatus==='green').length,od=myAll.filter(a=>a.amOD>0).length;
+  const red=myAll.filter(a=>a.overallStatus==='red').length,yel=myAll.filter(a=>a.overallStatus==='yellow').length,grn=myAll.filter(a=>a.overallStatus==='green').length,onHold=myAll.filter(a=>a.overallStatus==='on_hold').length,notStarted=myAll.filter(a=>a.overallStatus==='not_started').length,od=myAll.filter(a=>a.amOD>0).length;
   const pts=DB.users.filter(u=>u.role==='partner');
   return`<div class="krow">
 <div class="kcard kc-b"><div class="klbl">${isA()?'Total Accounts':'My Accounts'}</div><div class="knum">${myAll.length}</div><div class="ksub">Active records</div></div>
 <div class="kcard kc-r"><div class="klbl">Red</div><div class="knum">${red}</div><div class="ksub">Needs attention</div></div>
 <div class="kcard kc-y"><div class="klbl">Yellow</div><div class="knum">${yel}</div><div class="ksub">In progress</div></div>
 <div class="kcard kc-g"><div class="klbl">Green</div><div class="knum">${grn}</div><div class="ksub">On track</div></div>
+<div class="kcard kc-oh"><div class="klbl">On Hold</div><div class="knum">${onHold}</div><div class="ksub">Paused</div></div><div class="kcard kc-ns"><div class="klbl">Not Started</div><div class="knum">${notStarted}</div><div class="ksub">Pending start</div></div>
 <div class="kcard kc-p"><div class="klbl">Overdue</div><div class="knum">${od}</div><div class="ksub">AM Connect OD</div></div>
 </div>
 ${filterBarHTML(isA(),myAll)}
 <div class="card"><div class="ctitle">Accounts Overview</div>
 <div class="tscroll"><table style="min-width:500px"><thead><tr><th>Account</th>${isA()?'<th>Alliance Manager</th>':''}<th>Stage</th><th>Status</th><th>AM Connect</th><th>OD</th></tr></thead>
-<tbody>${f.slice(0,8).map(a=>`<tr><td><strong>${a.companyName}</strong><div style="font-size:10px;color:var(--muted)">${a.accountGroup}</div></td>${isA()?`<td style="font-size:11px">${a.partnerName}</td>`:''}<td style="font-size:11px">${a.stageName}</td><td><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green'}</span></td><td style="font-size:11px">${a.am?.connectStage||'<span style="color:var(--muted)">Not updated</span>'}</td><td>${a.amOD>0?`<span class="oday">+${a.amOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td></tr>`).join('')}</tbody></table></div></div>
+<tbody>${f.slice(0,8).map(a=>`<tr><td><strong>${a.companyName}</strong><div style="font-size:10px;color:var(--muted)">${a.accountGroup}</div></td>${isA()?`<td style="font-size:11px">${a.partnerName}</td>`:''}<td style="font-size:11px">${a.stageName}</td><td><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':a.overallStatus==='on_hold'?'On Hold':a.overallStatus==='not_started'?'Not Started':'Green'}</span></td><td style="font-size:11px">${a.am?.connectStage||'<span style="color:var(--muted)">Not updated</span>'}</td><td>${a.amOD>0?`<span class="oday">+${a.amOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td></tr>`).join('')}</tbody></table></div></div>
 <div style="display:flex;gap:10px;justify-content:center;margin-top:4px">
 </div>
 <div class="g3" style="margin-top:14px">
@@ -1161,7 +1162,7 @@ ${myAll.filter(a=>a.amOD>0).map(a=>`<div style="padding:7px 10px;border:1px soli
 function pgOverallDash(){
   const all=enAccs();
   const f=filtAccs(all);
-  const red=all.filter(a=>a.overallStatus==='red').length,yel=all.filter(a=>a.overallStatus==='yellow').length,grn=all.filter(a=>a.overallStatus==='green').length,od=all.filter(a=>a.amOD>0).length;
+  const red=all.filter(a=>a.overallStatus==='red').length,yel=all.filter(a=>a.overallStatus==='yellow').length,grn=all.filter(a=>a.overallStatus==='green').length,onHold=all.filter(a=>a.overallStatus==='on_hold').length,notStarted=all.filter(a=>a.overallStatus==='not_started').length,od=all.filter(a=>a.amOD>0).length;
   const pts=DB.users.filter(u=>u.role==='partner');
   return`<div style="font-size:15px;font-weight:700;margin-bottom:4px">Overall Dashboard</div>
 <div style="font-size:12px;color:var(--muted);margin-bottom:12px">All accounts across all Alliance Managers.</div>
@@ -1170,6 +1171,7 @@ function pgOverallDash(){
 <div class="kcard kc-r"><div class="klbl">Red</div><div class="knum">${red}</div><div class="ksub">Needs attention</div></div>
 <div class="kcard kc-y"><div class="klbl">Yellow</div><div class="knum">${yel}</div><div class="ksub">In progress</div></div>
 <div class="kcard kc-g"><div class="klbl">Green</div><div class="knum">${grn}</div><div class="ksub">On track</div></div>
+<div class="kcard kc-oh"><div class="klbl">On Hold</div><div class="knum">${onHold}</div><div class="ksub">Paused</div></div><div class="kcard kc-ns"><div class="klbl">Not Started</div><div class="knum">${notStarted}</div><div class="ksub">Pending start</div></div>
 <div class="kcard kc-p"><div class="klbl">Overdue</div><div class="knum">${od}</div><div class="ksub">AM Connect OD</div></div>
 </div>
 <div class="card" style="margin-bottom:14px">
@@ -1186,7 +1188,7 @@ ${filterBarHTML(true,all)}
 
 <div class="card"><div class="ctitle">All Accounts</div>
 <div class="tscroll"><table style="min-width:600px"><thead><tr><th>Account</th><th>Alliance Manager</th><th>Group</th><th>Stage</th><th>Status</th><th>Importance</th><th>OD</th></tr></thead>
-<tbody>${f.map(a=>`<tr><td><strong>${a.companyName}</strong></td><td style="font-size:11px">${a.partnerName}</td><td style="font-size:11px">${a.accountGroup||'—'}</td><td style="font-size:11px">${a.stageName}</td><td><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green'}</span></td><td style="font-size:11px">${a.accountImportance||'—'}</td><td>${a.amOD>0?`<span class="oday">+${a.amOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td></tr>`).join('')}</tbody></table></div></div>`;
+<tbody>${f.map(a=>`<tr><td><strong>${a.companyName}</strong></td><td style="font-size:11px">${a.partnerName}</td><td style="font-size:11px">${a.accountGroup||'—'}</td><td style="font-size:11px">${a.stageName}</td><td><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':a.overallStatus==='on_hold'?'On Hold':a.overallStatus==='not_started'?'Not Started':'Green'}</span></td><td style="font-size:11px">${a.accountImportance||'—'}</td><td>${a.amOD>0?`<span class="oday">+${a.amOD}d</span>`:'<span style="color:#3aaa5e;font-size:11px">OK</span>'}</td></tr>`).join('')}</tbody></table></div></div>`;
 }
 
 
@@ -1251,7 +1253,7 @@ ${!myAccs.length
   <div class="acc-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.companyName}</div>
   <div class="acc-meta">${a.stageName}</div>
 </div>
-<span class="pill ${sc(a.overallStatus)}" style="font-size:9px;flex-shrink:0;padding:1px 6px">${a.overallStatus==='red'?'R':a.overallStatus==='yellow'?'Y':'G'}</span>
+<span class="pill ${sc(a.overallStatus)}" style="font-size:9px;flex-shrink:0;padding:1px 6px">${a.overallStatus==='red'?'R':a.overallStatus==='yellow'?'Y':a.overallStatus==='on_hold'?'OH':a.overallStatus==='not_started'?'NS':'G'}</span>
 </div>
 <div class="acc-tags">
 ${a.focusArea?`<span class="acc-tag">${a.focusArea}</span>`:''}${a.opportunityCategory?`<span class="acc-tag">${a.opportunityCategory}</span>`:''}${a.crop?`<span class="acc-tag" style="background:#eafaf1;color:#1e8449">${a.crop}</span>`:''}
@@ -1564,7 +1566,7 @@ ${DB.accounts.map(a=>{
       <div class="acc-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.companyName}</div>
       <div class="acc-meta">${ptnr.name}</div>
     </div>
-    <span class="pill ${sc(a.overallStatus)}" style="font-size:9px;flex-shrink:0;padding:1px 6px">${a.overallStatus==='red'?'R':a.overallStatus==='yellow'?'Y':'G'}</span>
+    <span class="pill ${sc(a.overallStatus)}" style="font-size:9px;flex-shrink:0;padding:1px 6px">${a.overallStatus==='red'?'R':a.overallStatus==='yellow'?'Y':a.overallStatus==='on_hold'?'OH':a.overallStatus==='not_started'?'NS':'G'}</span>
   </div>
   <div class="acc-tags">
     ${a.focusArea?`<span class="acc-tag">${a.focusArea}</span>`:''}
@@ -1596,7 +1598,7 @@ ${acc?`<div style="font-size:10px;color:var(--muted);margin-top:2px">&#9432; Cha
 <div class="fg"><label class="fl">Opportunity Category</label>${ddS('fa-oc','opportunityCategory',acc?.opportunityCategory||'')}</div>
 <div class="fg"><label class="fl">Crop</label>${ddS('fa-cr','crop',acc?.crop||'')}</div>
 <div class="fg"><label class="fl">Stage</label><select id="fa-st"><option value="">Select...</option>${DB.stages.map(s=>`<option value="${s.id}"${acc?.stageId===s.id?' selected':''}>${s.name}</option>`).join('')}</select></div>
-<div class="fg"><label class="fl">Overall Status</label><select id="fa-os"><option value="red"${acc?.overallStatus==='red'?' selected':''}>Red</option><option value="yellow"${(!acc||acc.overallStatus==='yellow')?' selected':''}>Yellow</option><option value="green"${acc?.overallStatus==='green'?' selected':''}>Green</option></select></div>
+<div class="fg"><label class="fl">Overall Status</label><select id="fa-os"><option value="red"${acc?.overallStatus==='red'?' selected':''}>Red</option><option value="yellow"${(!acc||acc.overallStatus==='yellow')?' selected':''}>Yellow</option><option value="green"${acc?.overallStatus==='green'?' selected':''}>Green</option><option value="on_hold"${acc?.overallStatus==='on_hold'?' selected':''}>On Hold</option><option value="not_started"${acc?.overallStatus==='not_started'?' selected':''}>Not Started</option></select></div>
 </div>
 <div class="fg full" style="margin-top:2px">
   <label class="fl">Action Item <span style="font-weight:400;color:var(--muted)">(visible to Alliance Manager)</span></label>
@@ -1705,7 +1707,7 @@ ${isA()?`<select style="padding:4px 9px;border:1px solid var(--border);border-ra
 <td><strong>${a.companyName}</strong><div style="font-size:10px;color:var(--muted)">${a.accountGroup}</div>${a.adminActionItem?`<div style="font-size:10px;color:#e65100;margin-top:2px">&#128221; ${a.adminActionItem.substring(0,30)}${a.adminActionItem.length>30?'...':''}</div>`:''}</td>
 ${isA()?`<td style="font-size:11px">${a.partnerName}</td>`:''}
 <td style="font-size:11px">${a.stageName}</td>
-<td><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green'}</span></td>
+<td><span class="pill ${sc(a.overallStatus)}">${a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':a.overallStatus==='on_hold'?'On Hold':a.overallStatus==='not_started'?'Not Started':'Green'}</span></td>
 <td style="font-size:11px">${latestSD?.stage||a.am?.connectStage||'—'}</td>
 <td style="font-size:11px">${fmtD(latestSD?.connectDate||a.am?.connectDateDM)}</td>
 <td style="font-size:11px">${fmtD(latestSD?.nextConnectDate||a.am?.nextConnectDateDM)}</td>
@@ -2129,7 +2131,7 @@ async function dlProgressCSV(){
       return[
         a.companyName,a.accountGroup||'',a.partnerName,
         latestSD?.stage||a.am?.connectStage||'Not started',sd.length+'/6',
-        a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':'Green',
+        a.overallStatus==='red'?'Red':a.overallStatus==='yellow'?'Yellow':a.overallStatus==='on_hold'?'On Hold':a.overallStatus==='not_started'?'Not Started':'Green',
         a.adminActionItem||'',a.fy2627AB||0,a.fy2627FF||0,a.estimatedPeakPotential||0,
         a.accountImportance||'',a.amOD||0,
       ];
